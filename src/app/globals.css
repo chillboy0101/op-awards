@@ -213,6 +213,7 @@ a {
 .form-grid,
 .directory-block,
 .schedule-list,
+.schedule-form-grid,
 .work-panel {
   display: grid;
   gap: 12px;
@@ -392,6 +393,18 @@ label {
   font-weight: 720;
 }
 
+.check-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 42px;
+}
+
+.check-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -518,6 +531,83 @@ textarea:focus {
   gap: 12px;
 }
 
+.celebration-scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 132px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 107, 96, 0.2);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(239, 199, 109, 0.36), transparent 26%),
+    radial-gradient(circle at 82% 22%, rgba(141, 59, 92, 0.24), transparent 24%),
+    linear-gradient(135deg, #f8fcfb, #ecf7f4);
+  text-align: center;
+}
+
+.celebration-scene h3 {
+  margin: 0;
+  color: var(--accent-strong);
+  font-size: clamp(1.7rem, 4vw, 2.8rem);
+  line-height: 1;
+}
+
+.celebration-scene p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.confetti {
+  position: absolute;
+  top: -18px;
+  width: 9px;
+  height: 22px;
+  border-radius: 3px;
+  animation: confetti-fall 3.8s linear infinite;
+}
+
+.confetti-a {
+  left: 18%;
+  background: var(--gold);
+}
+
+.confetti-b {
+  left: 38%;
+  background: var(--accent);
+  animation-delay: 0.9s;
+}
+
+.confetti-c {
+  left: 62%;
+  background: var(--wine);
+  animation-delay: 1.7s;
+}
+
+.confetti-d {
+  left: 82%;
+  background: #2d7fba;
+  animation-delay: 2.4s;
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) rotate(0deg);
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(180px) rotate(320deg);
+  }
+}
+
 .admin-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
@@ -536,6 +626,10 @@ textarea:focus {
 
 .schedule-row {
   background: #fbfcfd;
+}
+
+.schedule-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .schedule-row span,
@@ -561,6 +655,27 @@ textarea:focus {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.category-edit-row {
+  width: 100%;
+  text-align: left;
+}
+
+.category-action-row {
+  align-items: flex-start;
+}
+
+.inline-message {
+  color: var(--accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    animation: none;
+    opacity: 0.75;
+    top: 22px;
+  }
 }
 
 .auth-shell {
@@ -632,6 +747,7 @@ textarea:focus {
   .admin-columns,
   .people-list,
   .finalist-grid,
+  .schedule-form-grid,
   .chip-row {
     grid-template-columns: 1fr;
   }

@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 
 import { getDb, hasDatabaseUrl, schema } from "@/db";
 import { syncAllowedOrganizationMembers } from "@/lib/auth/clerk-members";
@@ -124,20 +124,26 @@ export async function getPortalData(
 
   if (!cycle) return getFallbackPortalData();
 
-  const [members, categories, nominations, finalists, votes, certifications, audit] =
-    await Promise.all([
-      db.select().from(schema.members),
-      db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
-      db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id)),
-      db.select().from(schema.finalists),
-      db.select().from(schema.anonymousVotes).where(eq(schema.anonymousVotes.cycleId, cycle.id)),
-      db.select().from(schema.resultCertifications),
-      db
-        .select()
-        .from(schema.auditEvents)
-        .orderBy(desc(schema.auditEvents.createdAt))
-        .limit(8),
-    ]);
+  const [members, categories, nominations, votes, audit] = await Promise.all([
+    db.select().from(schema.members).where(eq(schema.members.status, "active")),
+    db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
+    db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id)),
+    db.select().from(schema.anonymousVotes).where(eq(schema.anonymousVotes.cycleId, cycle.id)),
+    db.select().from(schema.auditEvents).orderBy(desc(schema.auditEvents.createdAt)).limit(8),
+  ]);
+  const categoryIds = categories.map((category) => category.id);
+  const [finalists, certifications] = categoryIds.length
+    ? await Promise.all([
+        db
+          .select()
+          .from(schema.finalists)
+          .where(inArray(schema.finalists.categoryId, categoryIds)),
+        db
+          .select()
+          .from(schema.resultCertifications)
+          .where(inArray(schema.resultCertifications.categoryId, categoryIds)),
+      ])
+    : [[], []];
 
   const memberList = members.map(
     (member): Member => ({
@@ -154,6 +160,7 @@ export async function getPortalData(
 
   const categoryList = categories.map(
     (category): Category => ({
+      active: category.active,
       description: category.description,
       finalistLimit: category.finalistLimit,
       id: category.id,

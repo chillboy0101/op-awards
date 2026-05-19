@@ -1,7 +1,8 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { getDb, hasDatabaseUrl, schema } from "@/db";
@@ -10,6 +11,13 @@ import { assertRole } from "@/lib/auth/security";
 import { syncAllowedOrganizationMembers } from "@/lib/auth/clerk-members";
 import { awardModel } from "@/lib/awards/data";
 import { getEffectiveCycleStage, getMemberPhaseAccess } from "@/lib/awards/phase";
+import {
+  calculateResults,
+  createResultCertificationSnapshot,
+  suggestFinalists,
+  validateCategorySetup,
+  validateNomination,
+} from "@/lib/awards/workflow.mjs";
 import { sendVoteReceiptEmail } from "@/lib/email/resend";
 
 const nominationSchema = z.object({
@@ -32,9 +40,29 @@ const memberSchema = z.object({
   status: z.enum(["active", "inactive"]),
 });
 
+const categorySetupSchema = z.object({
+  active: z.boolean().default(true),
+  categoryId: z.string().optional(),
+  description: z.string().min(1),
+  finalistLimit: z.coerce.number().int().min(1).max(20),
+  nominationLimit: z.coerce.number().int().min(1).max(10),
+  nominationQuestion: z.string().min(1),
+  title: z.string().min(1),
+});
+
 const cycleStageSchema = z.object({
   cycleId: z.string().min(1),
   stage: z.enum(["draft", "nominations", "review", "voting", "certification", "published"]),
+});
+
+const cycleScheduleSchema = z.object({
+  cycleId: z.string().min(1),
+  nominationsCloseAt: z.string().min(1),
+  nominationsOpenAt: z.string().min(1),
+  publishAt: z.string().min(1),
+  title: z.string().min(2),
+  votingCloseAt: z.string().min(1),
+  votingOpenAt: z.string().min(1),
 });
 
 type CycleTiming = {
@@ -45,6 +73,28 @@ type CycleTiming = {
   votingCloseAt: Date | null;
   votingOpenAt: Date | null;
 };
+
+type CategoryRow = typeof schema.categories.$inferSelect;
+type CurrentAdminUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+type ValidatedCategorySetup = {
+  active: boolean;
+  description: string;
+  finalistLimit: number;
+  nominationLimit: number;
+  nominationQuestion: string;
+  title: string;
+};
+
+function revalidateAwardPages() {
+  revalidatePath("/");
+  revalidatePath("/member");
+  revalidatePath("/admin");
+}
+
+function parseScheduleDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 function getDemoEffectiveStage() {
   return getEffectiveCycleStage({
@@ -68,6 +118,73 @@ function getCycleEffectiveStage(cycle: CycleTiming, approvedFinalistCount = 0) {
     votingCloseAt: cycle.votingCloseAt,
     votingOpenAt: cycle.votingOpenAt,
   });
+}
+
+async function getLatestCycle() {
+  const [cycle] = await getDb()
+    .select()
+    .from(schema.awardCycles)
+    .orderBy(desc(schema.awardCycles.createdAt))
+    .limit(1);
+
+  return cycle ?? null;
+}
+
+async function certifyCategoryResult(category: CategoryRow, user: CurrentAdminUser) {
+  const db = getDb();
+  const [finalists, votes] = await Promise.all([
+    db
+      .select()
+      .from(schema.finalists)
+      .where(
+        and(
+          eq(schema.finalists.categoryId, category.id),
+          eq(schema.finalists.status, "approved"),
+        ),
+      ),
+    db
+      .select()
+      .from(schema.anonymousVotes)
+      .where(eq(schema.anonymousVotes.categoryId, category.id)),
+  ]);
+  const result = calculateResults({
+    category,
+    finalists: finalists.map((finalist) => ({
+      categoryId: finalist.categoryId,
+      displayName: finalist.displayName,
+      id: finalist.id,
+      nomineeId: finalist.nomineeId,
+    })),
+    votes,
+  });
+  const certification = createResultCertificationSnapshot({ category, result });
+  const certificationStatus = certification.status as "certified" | "pending" | "tie";
+
+  await db
+    .delete(schema.resultCertifications)
+    .where(eq(schema.resultCertifications.categoryId, category.id));
+
+  await db.insert(schema.resultCertifications).values({
+    categoryId: category.id,
+    certifiedAt: new Date(),
+    status: certificationStatus,
+    tallySnapshot: certification.tallySnapshot,
+    winnerFinalistId: certification.winnerFinalistId,
+  });
+
+  await db.insert(schema.auditEvents).values({
+    action: "certify_results",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: category.id,
+    summary: `Certified results for ${category.title}.`,
+    metadata: {
+      status: certification.status,
+      winnerFinalistId: certification.winnerFinalistId,
+    },
+  });
+
+  return certification;
 }
 
 export async function createNominationAction(input: unknown) {
@@ -109,6 +226,30 @@ export async function createNominationAction(input: unknown) {
     return { ok: false, error: "Nominations are not open." };
   }
 
+  const [members, existingNominations] = await Promise.all([
+    db.select().from(schema.members),
+    db.select().from(schema.nominations).where(eq(schema.nominations.categoryId, category.id)),
+  ]);
+  const nominationValidation = validateNomination({
+    category,
+    existingNominations,
+    members,
+    nomineeId: parsed.data.nomineeId,
+    nominatorId: user.member.id,
+  });
+
+  if (!nominationValidation.ok) {
+    return {
+      ok: false,
+      error:
+        nominationValidation.reason === "CATEGORY_NOMINATION_LIMIT_REACHED"
+          ? "You already nominated in this category."
+          : nominationValidation.reason === "NOMINEE_NOT_ACTIVE_MEMBER"
+            ? "Choose an active member."
+            : "Unable to save this nomination.",
+    };
+  }
+
   await db.insert(schema.nominations).values({
     categoryId: parsed.data.categoryId,
     cycleId: category.cycleId,
@@ -117,6 +258,8 @@ export async function createNominationAction(input: unknown) {
     statement: parsed.data.statement,
     supportingLink: parsed.data.supportingLink || null,
   });
+
+  revalidateAwardPages();
 
   return { ok: true };
 }
@@ -174,12 +317,20 @@ export async function submitBallotAction(input: unknown) {
     }
   }
 
-  await db.insert(schema.voteReceipts).values({
-    categoryIds,
-    confirmationCode,
-    cycleId: parsed.data.cycleId,
-    memberId: user.member.id,
-  });
+  try {
+    await db.insert(schema.voteReceipts).values({
+      categoryIds,
+      confirmationCode,
+      cycleId: parsed.data.cycleId,
+      memberId: user.member.id,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("vote_receipts_cycle_member_unique")) {
+      return { ok: false, error: "You already submitted this ballot." };
+    }
+
+    throw error;
+  }
 
   await db.insert(schema.anonymousVotes).values(
     Object.entries(parsed.data.selections).map(([categoryId, finalistId]) => ({
@@ -194,7 +345,179 @@ export async function submitBallotAction(input: unknown) {
     email: user.member.email,
   });
 
+  revalidateAwardPages();
+
   return { ok: true, confirmationCode };
+}
+
+export async function upsertCategoryAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = categorySetupSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Check the category fields." };
+
+  const validated = validateCategorySetup(parsed.data);
+  if (!validated.ok) return { ok: false, error: "Check the category fields." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const cycle = await getLatestCycle();
+  if (!cycle) return { ok: false, error: "Create an award cycle first." };
+
+  const category = validated.category as ValidatedCategorySetup;
+  const categoryId = parsed.data.categoryId?.trim();
+  const db = getDb();
+
+  if (categoryId) {
+    await db
+      .update(schema.categories)
+      .set({
+        active: category.active,
+        description: category.description,
+        finalistLimit: category.finalistLimit,
+        nominationLimit: category.nominationLimit,
+        nominationQuestion: category.nominationQuestion,
+        title: category.title,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(schema.categories.id, categoryId), eq(schema.categories.cycleId, cycle.id)));
+  } else {
+    await db.insert(schema.categories).values({
+      active: category.active,
+      cycleId: cycle.id,
+      description: category.description,
+      finalistLimit: category.finalistLimit,
+      nominationLimit: category.nominationLimit,
+      nominationQuestion: category.nominationQuestion,
+      title: category.title,
+    });
+  }
+
+  await db.insert(schema.auditEvents).values({
+    action: categoryId ? "update_category" : "create_category",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: category.title,
+    summary: `Admin ${categoryId ? "updated" : "created"} award category.`,
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true };
+}
+
+export async function approveFinalistsAction(categoryId: string) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true, count: 0 };
+
+  const db = getDb();
+  const [category] = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.id, categoryId))
+    .limit(1);
+
+  if (!category) return { ok: false, error: "Category not found." };
+
+  const [members, nominations] = await Promise.all([
+    db.select().from(schema.members).where(eq(schema.members.status, "active")),
+    db.select().from(schema.nominations).where(eq(schema.nominations.categoryId, category.id)),
+  ]);
+  const existingVotes = await db
+    .select({ id: schema.anonymousVotes.id })
+    .from(schema.anonymousVotes)
+    .where(eq(schema.anonymousVotes.categoryId, category.id))
+    .limit(1);
+
+  if (existingVotes.length > 0) {
+    return { ok: false, error: "Finalists cannot change after voting starts." };
+  }
+
+  const suggestions = suggestFinalists({
+    category,
+    members,
+    nominations,
+  });
+
+  if (suggestions.length === 0) {
+    return { ok: false, error: "No nominations yet for this category." };
+  }
+
+  await db
+    .update(schema.finalists)
+    .set({ status: "draft", updatedAt: new Date() })
+    .where(eq(schema.finalists.categoryId, category.id));
+
+  for (const suggestion of suggestions) {
+    const [existing] = await db
+      .select()
+      .from(schema.finalists)
+      .where(
+        and(
+          eq(schema.finalists.categoryId, category.id),
+          eq(schema.finalists.nomineeId, suggestion.nomineeId),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(schema.finalists)
+        .set({
+          approvedAt: new Date(),
+          displayName: suggestion.displayName,
+          nominationCount: suggestion.nominationCount,
+          status: "approved",
+          summary: `${suggestion.nominationCount} nomination${
+            suggestion.nominationCount === 1 ? "" : "s"
+          } received.`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.finalists.id, existing.id));
+    } else {
+      await db.insert(schema.finalists).values({
+        approvedAt: new Date(),
+        categoryId: category.id,
+        displayName: suggestion.displayName,
+        nominationCount: suggestion.nominationCount,
+        nomineeId: suggestion.nomineeId,
+        status: "approved",
+        summary: `${suggestion.nominationCount} nomination${
+          suggestion.nominationCount === 1 ? "" : "s"
+        } received.`,
+      });
+    }
+  }
+
+  await db.insert(schema.auditEvents).values({
+    action: "approve_finalists",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: category.title,
+    summary: `Approved ${suggestions.length} finalists.`,
+    metadata: { finalists: suggestions.length },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, count: suggestions.length };
 }
 
 export async function upsertMemberAction(input: unknown) {
@@ -239,6 +562,8 @@ export async function syncClerkRosterAction() {
 
   const members = await syncAllowedOrganizationMembers();
 
+  revalidateAwardPages();
+
   return { ok: true, count: members.length };
 }
 
@@ -262,6 +587,70 @@ export async function updateCycleStageAction(input: unknown) {
     .update(schema.awardCycles)
     .set({ stage: parsed.data.stage, updatedAt: new Date() })
     .where(eq(schema.awardCycles.id, parsed.data.cycleId));
+
+  revalidateAwardPages();
+
+  return { ok: true };
+}
+
+export async function updateCycleScheduleAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = cycleScheduleSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Check the schedule fields." };
+
+  const nominationsOpenAt = parseScheduleDate(parsed.data.nominationsOpenAt);
+  const nominationsCloseAt = parseScheduleDate(parsed.data.nominationsCloseAt);
+  const votingOpenAt = parseScheduleDate(parsed.data.votingOpenAt);
+  const votingCloseAt = parseScheduleDate(parsed.data.votingCloseAt);
+  const publishAt = parseScheduleDate(parsed.data.publishAt);
+
+  if (!nominationsOpenAt || !nominationsCloseAt || !votingOpenAt || !votingCloseAt || !publishAt) {
+    return { ok: false, error: "Check the schedule dates." };
+  }
+
+  if (
+    nominationsOpenAt >= nominationsCloseAt ||
+    nominationsCloseAt >= votingOpenAt ||
+    votingOpenAt >= votingCloseAt ||
+    votingCloseAt >= publishAt
+  ) {
+    return { ok: false, error: "Use the order: nominations, review, voting, results." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  await getDb()
+    .update(schema.awardCycles)
+    .set({
+      nominationsCloseAt,
+      nominationsOpenAt,
+      publishAt,
+      title: parsed.data.title.trim(),
+      updatedAt: new Date(),
+      votingCloseAt,
+      votingOpenAt,
+    })
+    .where(eq(schema.awardCycles.id, parsed.data.cycleId));
+
+  await getDb().insert(schema.auditEvents).values({
+    action: "update_schedule",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: parsed.data.cycleId,
+    summary: "Admin updated the awards schedule.",
+  });
+
+  revalidateAwardPages();
 
   return { ok: true };
 }
@@ -303,13 +692,17 @@ export async function certifyResultsAction(categoryId: string) {
 
   if (!hasDatabaseUrl()) return { ok: true, demo: true };
 
-  await getDb().insert(schema.auditEvents).values({
-    action: "certify_results",
-    actorMemberId: user.member.id,
-    actorRole: user.role,
-    target: categoryId,
-    summary: "Admin certified category results.",
-  });
+  const [category] = await getDb()
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.id, categoryId))
+    .limit(1);
+
+  if (!category) return { ok: false, error: "Category not found." };
+
+  await certifyCategoryResult(category, user);
+
+  revalidateAwardPages();
 
   return { ok: true };
 }
@@ -351,6 +744,10 @@ export async function publishWinnersAction(cycleId: string) {
     return { ok: false, error: "Publish winners after voting closes." };
   }
 
+  for (const category of cycleCategories) {
+    await certifyCategoryResult(category, user);
+  }
+
   await db
     .update(schema.awardCycles)
     .set({ publishedAt: now, stage: "published", updatedAt: now })
@@ -363,6 +760,8 @@ export async function publishWinnersAction(cycleId: string) {
     target: cycleId,
     summary: "Admin published winners publicly.",
   });
+
+  revalidateAwardPages();
 
   return { ok: true };
 }

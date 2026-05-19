@@ -4,10 +4,12 @@ import { describe, it } from "node:test";
 import {
   approveFinalists,
   calculateResults,
+  createResultCertificationSnapshot,
   createRunoffCategory,
   createVoteReceipt,
   recordAnonymousVotes,
   suggestFinalists,
+  validateCategorySetup,
   validateNomination,
 } from "../src/lib/awards/workflow.mjs";
 
@@ -117,6 +119,43 @@ describe("finalist workflow", () => {
   });
 });
 
+describe("category setup", () => {
+  it("normalizes admin category setup and rejects invalid limits", () => {
+    assert.deepEqual(
+      validateCategorySetup({
+        active: true,
+        description: "  Recognizes practical service to the O&P community. ",
+        finalistLimit: 4,
+        nominationLimit: 2,
+        nominationQuestion: " Who deserves this award? ",
+        title: "  Community Impact ",
+      }),
+      {
+        ok: true,
+        category: {
+          active: true,
+          description: "Recognizes practical service to the O&P community.",
+          finalistLimit: 4,
+          nominationLimit: 2,
+          nominationQuestion: "Who deserves this award?",
+          title: "Community Impact",
+        },
+      },
+    );
+
+    assert.equal(
+      validateCategorySetup({
+        description: "Too short",
+        finalistLimit: 0,
+        nominationLimit: 0,
+        nominationQuestion: "",
+        title: "",
+      }).reason,
+      "INVALID_CATEGORY_SETUP",
+    );
+  });
+});
+
 describe("anonymous voting", () => {
   const finalists = [
     { id: "fin-1", categoryId: category.id, nomineeId: "mem-2", displayName: "Blair Chen" },
@@ -169,6 +208,54 @@ describe("anonymous voting", () => {
     assert.deepEqual(
       runoff.eligibleFinalistIds.sort(),
       ["fin-1", "fin-2"],
+    );
+  });
+
+  it("creates certification snapshots with winners, ties, and no-vote pending states", () => {
+    const winnerResult = calculateResults({
+      category,
+      finalists,
+      votes: [
+        { id: "vote-1", cycleId: "cycle-2026", categoryId: category.id, finalistId: "fin-1" },
+        { id: "vote-2", cycleId: "cycle-2026", categoryId: category.id, finalistId: "fin-1" },
+        { id: "vote-3", cycleId: "cycle-2026", categoryId: category.id, finalistId: "fin-2" },
+      ],
+    });
+
+    assert.deepEqual(createResultCertificationSnapshot({ category, result: winnerResult }), {
+      status: "certified",
+      tallySnapshot: {
+        category: "Leadership Excellence",
+        count: 2,
+        leader: "Blair Chen",
+        status: "ready",
+        totals: [
+          { displayName: "Blair Chen", finalistId: "fin-1", voteCount: 2 },
+          { displayName: "Devon Patel", finalistId: "fin-2", voteCount: 1 },
+        ],
+      },
+      winnerFinalistId: "fin-1",
+    });
+
+    const tieResult = calculateResults({
+      category,
+      finalists,
+      votes: [
+        { id: "vote-1", cycleId: "cycle-2026", categoryId: category.id, finalistId: "fin-1" },
+        { id: "vote-2", cycleId: "cycle-2026", categoryId: category.id, finalistId: "fin-2" },
+      ],
+    });
+
+    assert.equal(createResultCertificationSnapshot({ category, result: tieResult }).status, "tie");
+    assert.equal(
+      createResultCertificationSnapshot({ category, result: tieResult }).winnerFinalistId,
+      null,
+    );
+
+    const noVoteResult = calculateResults({ category, finalists, votes: [] });
+    assert.equal(
+      createResultCertificationSnapshot({ category, result: noVoteResult }).status,
+      "pending",
     );
   });
 });

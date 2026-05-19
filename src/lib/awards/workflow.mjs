@@ -14,6 +14,38 @@ function nominationCountForNominator(existingNominations, categoryId, nominatorI
   ).length;
 }
 
+function compactText(value) {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+export function validateCategorySetup(input) {
+  const category = {
+    active: input.active !== false,
+    description: compactText(input.description),
+    finalistLimit: positiveInteger(input.finalistLimit, 0),
+    nominationLimit: positiveInteger(input.nominationLimit, 0),
+    nominationQuestion: compactText(input.nominationQuestion),
+    title: compactText(input.title),
+  };
+
+  if (
+    category.title.length < 2 ||
+    category.description.length < 12 ||
+    category.nominationQuestion.length < 8 ||
+    category.nominationLimit < 1 ||
+    category.finalistLimit < 1
+  ) {
+    return { ok: false, reason: "INVALID_CATEGORY_SETUP" };
+  }
+
+  return { ok: true, category };
+}
+
 export function validateNomination({
   members,
   category,
@@ -156,6 +188,55 @@ export function calculateResults({ category, finalists, votes }) {
     totals: sortedTotals,
     tiedFinalists: [],
     winner: sortedTotals[0] ?? null,
+  };
+}
+
+export function createResultCertificationSnapshot({ category, result }) {
+  const totals = result.totals.map((finalist) => ({
+    displayName: finalist.displayName,
+    finalistId: finalist.id,
+    voteCount: finalist.voteCount,
+  }));
+  const topCount = result.winner?.voteCount ?? result.tiedFinalists[0]?.voteCount ?? 0;
+
+  if (!topCount) {
+    return {
+      status: "pending",
+      tallySnapshot: {
+        category: category.title,
+        count: 0,
+        leader: "Pending",
+        status: "pending",
+        totals,
+      },
+      winnerFinalistId: null,
+    };
+  }
+
+  if (result.status === "tie") {
+    return {
+      status: "tie",
+      tallySnapshot: {
+        category: category.title,
+        count: topCount,
+        leader: "Tie",
+        status: "tie-check",
+        totals,
+      },
+      winnerFinalistId: null,
+    };
+  }
+
+  return {
+    status: "certified",
+    tallySnapshot: {
+      category: category.title,
+      count: result.winner.voteCount,
+      leader: result.winner.displayName,
+      status: "ready",
+      totals,
+    },
+    winnerFinalistId: result.winner.id,
   };
 }
 

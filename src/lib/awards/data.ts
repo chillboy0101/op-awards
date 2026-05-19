@@ -17,6 +17,7 @@ export type Member = {
 };
 
 export type Category = {
+  active: boolean;
   id: string;
   title: string;
   description: string;
@@ -125,6 +126,7 @@ export const awardModel = {
   ] satisfies Member[],
   categories: [
     {
+      active: true,
       id: "cat-leadership",
       title: "Leadership Excellence",
       description: "Recognizes a member whose leadership improved the O&P community.",
@@ -133,6 +135,7 @@ export const awardModel = {
       question: "What leadership action created measurable value for members?",
     },
     {
+      active: true,
       id: "cat-service",
       title: "Member Service",
       description: "Honors a member who gave exceptional service to peers.",
@@ -141,6 +144,7 @@ export const awardModel = {
       question: "How did this member serve others beyond their regular role?",
     },
     {
+      active: true,
       id: "cat-innovation",
       title: "Practice Innovation",
       description: "Celebrates a member who modernized practice, process, or education.",

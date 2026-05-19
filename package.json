@@ -10,7 +10,8 @@
     "test": "node --test \"tests/**/*.test.mjs\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "db:sync-clerk": "node scripts/sync-clerk-members.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.7",

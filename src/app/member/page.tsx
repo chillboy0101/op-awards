@@ -7,7 +7,7 @@ import { hasClerkConfig } from "@/lib/auth/clerk-config";
 
 export default async function MemberPage() {
   const [model, currentUser] = await Promise.all([
-    getPortalData({ includeClerkRoster: true }),
+    getPortalData(),
     getCurrentUser(),
   ]);
 
