@@ -11,8 +11,14 @@ const isProtectedRoute = createRouteMatcher(["/member(.*)", "/admin(.*)"]);
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isProtectedRoute(request)) return NextResponse.next();
 
+  const signInUrl = new URL("/sign-in", request.url);
+  signInUrl.searchParams.set(
+    "redirect_url",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+
   const authState = await auth.protect({
-    unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
+    unauthenticatedUrl: signInUrl.toString(),
   });
   const allowedOrgId = getAllowedClerkOrgId();
 
