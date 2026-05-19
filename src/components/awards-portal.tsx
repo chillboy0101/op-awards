@@ -136,7 +136,7 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Results</p>
           <h2>{published ? "Winners" : "Pending"}</h2>
         </div>
-        <StagePill stage={published ? "Published" : "Pending"} />
+        {published ? <StagePill stage="Published" /> : null}
       </div>
       {published ? (
         <div className="celebration-scene" aria-label="Winner celebration">
