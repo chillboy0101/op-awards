@@ -12,7 +12,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   if (!isProtectedRoute(request)) return NextResponse.next();
 
   const authState = await auth.protect({
-    unauthenticatedUrl: "/sign-in",
+    unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
   });
   const allowedOrgId = getAllowedClerkOrgId();
 
