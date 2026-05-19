@@ -8,7 +8,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   approveFinalistsAction,
   certifyResultsAction,
-  createNominationAction,
+  createNominationsAction,
   createRunoffAction,
   publishWinnersAction,
   submitBallotAction,
@@ -24,6 +24,7 @@ import type { CurrentUser } from "@/lib/auth/service";
 
 type VoteSelections = Record<string, string>;
 type DirectoryMember = Member & { isSelf: boolean; selectable: boolean };
+type NominationDraft = { nomineeId: string; statement: string };
 type PortalResult = {
   count?: number;
   demo?: boolean;
@@ -200,10 +201,12 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
 
 function CategoryPicker({
   categories,
+  completedCategoryIds = new Set<string>(),
   selectedCategory,
   setSelectedCategory,
 }: {
   categories: Category[];
+  completedCategoryIds?: Set<string>;
   selectedCategory: string;
   setSelectedCategory: (categoryId: string) => void;
 }) {
@@ -211,7 +214,13 @@ function CategoryPicker({
     <div className="chip-row" aria-label="Award categories">
       {categories.map((category) => (
         <button
-          className={selectedCategory === category.id ? "choice-chip is-selected" : "choice-chip"}
+          className={[
+            "choice-chip",
+            selectedCategory === category.id ? "is-selected" : "",
+            completedCategoryIds.has(category.id) ? "has-selection" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           key={category.id}
           onClick={() => setSelectedCategory(category.id)}
           type="button"
@@ -292,25 +301,49 @@ function NominationExperience({
   const activeCategories = model.categories.filter((category) => category.active);
   const firstCategoryId = activeCategories[0]?.id ?? "";
   const [selectedCategory, setSelectedCategory] = useState(firstCategoryId);
-  const firstNominee = model.members.find(
-    (member) => member.status === "active" && member.id !== currentUser.member.id,
-  )?.id;
-  const [nominee, setNominee] = useState(firstNominee ?? "");
-  const [statement, setStatement] = useState("");
+  const [nominationDrafts, setNominationDrafts] = useState<Record<string, NominationDraft>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const selectedQuestion = model.categories.find((category) => category.id === selectedCategory)?.question;
+  const selectedDraft = nominationDrafts[selectedCategory] ?? { nomineeId: "", statement: "" };
+  const completedCategoryIds = new Set(
+    activeCategories
+      .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
+      .map((category) => category.id),
+  );
+  const allCategoriesSelected =
+    activeCategories.length > 0 &&
+    activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
+
+  function updateDraft(categoryId: string, patch: Partial<NominationDraft>) {
+    setNominationDrafts((current) => ({
+      ...current,
+      [categoryId]: {
+        nomineeId: current[categoryId]?.nomineeId ?? "",
+        statement: current[categoryId]?.statement ?? "",
+        ...patch,
+      },
+    }));
+  }
 
   function submitNomination() {
     setMessage(null);
     startTransition(async () => {
-      const result = (await createNominationAction({
-        categoryId: selectedCategory,
-        nomineeId: nominee,
-        statement,
+      const result = (await createNominationsAction({
+        nominations: activeCategories.map((category) => ({
+          categoryId: category.id,
+          nomineeId: nominationDrafts[category.id]?.nomineeId ?? "",
+          statement: nominationDrafts[category.id]?.statement ?? "",
+        })),
       })) as PortalResult;
 
-      setMessage(result.ok ? "Saved." : result.error ?? "Unable to save.");
+      setMessage(
+        result.ok
+          ? `Saved ${result.count ?? activeCategories.length} nominations.`
+          : result.error ?? "Unable to save.",
+      );
+      if (result.ok) router.refresh();
     });
   }
 
@@ -325,6 +358,7 @@ function NominationExperience({
       </div>
       <CategoryPicker
         categories={activeCategories}
+        completedCategoryIds={completedCategoryIds}
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
       />
@@ -332,25 +366,28 @@ function NominationExperience({
       <MemberDirectory
         currentMemberId={currentUser.member.id}
         members={model.members}
-        selectedNominee={nominee}
-        setSelectedNominee={setNominee}
+        selectedNominee={selectedDraft.nomineeId}
+        setSelectedNominee={(memberId) => updateDraft(selectedCategory, { nomineeId: memberId })}
       />
       <label>
-        <span>Why this person?</span>
+        <span>Reason (optional)</span>
         <textarea
-          onChange={(event) => setStatement(event.target.value)}
-          placeholder={selectedQuestion}
+          onChange={(event) => updateDraft(selectedCategory, { statement: event.target.value })}
+          placeholder={selectedQuestion ? `Optional: ${selectedQuestion}` : "Optional note"}
           rows={4}
-          value={statement}
+          value={selectedDraft.statement}
         />
       </label>
+      <div className="selection-count">
+        {completedCategoryIds.size}/{activeCategories.length} categories selected
+      </div>
       <button
         className="primary-action"
-        disabled={!selectedCategory || !nominee || statement.trim().length < 20 || pending}
+        disabled={!allCategoriesSelected || pending}
         onClick={submitNomination}
         type="button"
       >
-        {pending ? "Saving" : "Submit nomination"}
+        {pending ? "Saving" : "Submit nominations"}
       </button>
       {message ? <div className="notice">{message}</div> : null}
     </section>

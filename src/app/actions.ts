@@ -19,14 +19,19 @@ import {
   validateBallotSelections,
   validateCategorySetup,
   validateNomination,
+  validateNominationBatch,
 } from "@/lib/awards/workflow.mjs";
 import { sendVoteReceiptEmail } from "@/lib/email/resend";
 
-const nominationSchema = z.object({
+const nominationEntrySchema = z.object({
   categoryId: z.string().min(1),
   nomineeId: z.string().min(1),
-  statement: z.string().min(20),
+  statement: z.string().max(2000).optional().default(""),
   supportingLink: z.string().url().optional().or(z.literal("")),
+});
+const nominationSchema = nominationEntrySchema;
+const nominationBatchSchema = z.object({
+  nominations: z.array(nominationEntrySchema).min(1),
 });
 
 const ballotSchema = z.object({
@@ -231,6 +236,26 @@ async function certifyCategoryResult(category: CategoryRow, user: CurrentAdminUs
   return certification;
 }
 
+function nominationValidationMessage(reason?: string) {
+  if (reason === "INCOMPLETE_NOMINATION_BALLOT") {
+    return "Select one person for every category.";
+  }
+
+  if (reason === "CATEGORY_NOMINATION_LIMIT_REACHED") {
+    return "You already nominated in one of these categories.";
+  }
+
+  if (reason === "NOMINEE_NOT_ACTIVE_MEMBER") {
+    return "Choose active members only.";
+  }
+
+  if (reason === "SELF_NOMINATION_NOT_ALLOWED") {
+    return "Self-nominations are not allowed.";
+  }
+
+  return "Unable to save these nominations.";
+}
+
 export async function createNominationAction(input: unknown) {
   const user = await getCurrentUser();
 
@@ -288,12 +313,7 @@ export async function createNominationAction(input: unknown) {
   if (!nominationValidation.ok) {
     return {
       ok: false,
-      error:
-        nominationValidation.reason === "CATEGORY_NOMINATION_LIMIT_REACHED"
-          ? "You already nominated in this category."
-          : nominationValidation.reason === "NOMINEE_NOT_ACTIVE_MEMBER"
-            ? "Choose an active member."
-            : "Unable to save this nomination.",
+      error: nominationValidationMessage(nominationValidation.reason),
     };
   }
 
@@ -309,6 +329,94 @@ export async function createNominationAction(input: unknown) {
   revalidateAwardPages();
 
   return { ok: true };
+}
+
+export async function createNominationsAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  const parsed = nominationBatchSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Select one person for every category." };
+
+  if (parsed.data.nominations.some((nomination) => nomination.nomineeId === user.member.id)) {
+    return { ok: false, error: "Self-nominations are not allowed." };
+  }
+
+  if (!hasDatabaseUrl()) {
+    if (!getMemberPhaseAccess(getDemoEffectiveStage()).canNominate) {
+      return { ok: false, error: "Nominations are not open." };
+    }
+
+    return { ok: true, demo: true, count: parsed.data.nominations.length };
+  }
+
+  const db = getDb();
+  const selectedCategoryIds = parsed.data.nominations.map((nomination) => nomination.categoryId);
+  const selectedCategories = await db
+    .select()
+    .from(schema.categories)
+    .where(inArray(schema.categories.id, selectedCategoryIds));
+  const cycleIds = new Set(selectedCategories.map((category) => category.cycleId));
+
+  if (selectedCategories.length !== selectedCategoryIds.length || cycleIds.size !== 1) {
+    return { ok: false, error: "Check the selected categories." };
+  }
+
+  const cycleId = [...cycleIds][0];
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, cycleId))
+    .limit(1);
+
+  if (!cycle) return { ok: false, error: "Nominations are not open." };
+
+  const progress = await getCycleCompletionProgress(cycle.id);
+  if (!getMemberPhaseAccess(getCycleEffectiveStage(cycle, progress)).canNominate) {
+    return { ok: false, error: "Nominations are not open." };
+  }
+
+  const [cycleCategories, members, existingNominations] = await Promise.all([
+    db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
+    db.select().from(schema.members),
+    db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id)),
+  ]);
+  const nominationValidation = validateNominationBatch({
+    categories: cycleCategories,
+    existingNominations,
+    members,
+    nominations: parsed.data.nominations,
+    nominatorId: user.member.id,
+  });
+
+  if (!nominationValidation.ok) {
+    const reason = "reason" in nominationValidation ? nominationValidation.reason : undefined;
+
+    return {
+      ok: false,
+      error: nominationValidationMessage(reason),
+    };
+  }
+
+  const validatedNominations =
+    "nominations" in nominationValidation ? nominationValidation.nominations : [];
+
+  await db.insert(schema.nominations).values(
+    validatedNominations.map((nomination) => ({
+      categoryId: nomination.categoryId,
+      cycleId: cycle.id,
+      nomineeId: nomination.nomineeId,
+      nominatorId: user.member.id,
+      statement: nomination.statement,
+      supportingLink: null,
+    })),
+  );
+
+  revalidateAwardPages();
+
+  return { ok: true, count: validatedNominations.length };
 }
 
 export async function submitBallotAction(input: unknown) {

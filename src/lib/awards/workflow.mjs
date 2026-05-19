@@ -106,6 +106,55 @@ export function validateNomination({
   return { ok: true };
 }
 
+export function validateNominationBatch({
+  categories,
+  existingNominations,
+  members,
+  nominations,
+  nominatorId,
+}) {
+  const activeCategories = categories.filter((category) => category.active !== false);
+  const nominationByCategory = new Map();
+
+  for (const nomination of nominations) {
+    if (nominationByCategory.has(nomination.categoryId)) {
+      return { ok: false, reason: "DUPLICATE_CATEGORY_NOMINATION" };
+    }
+
+    nominationByCategory.set(nomination.categoryId, nomination);
+  }
+
+  if (
+    activeCategories.length === 0 ||
+    activeCategories.some((category) => !nominationByCategory.get(category.id)?.nomineeId)
+  ) {
+    return { ok: false, reason: "INCOMPLETE_NOMINATION_BALLOT" };
+  }
+
+  const normalizedNominations = [];
+
+  for (const category of activeCategories) {
+    const nomination = nominationByCategory.get(category.id);
+    const validation = validateNomination({
+      category,
+      existingNominations,
+      members,
+      nomineeId: nomination.nomineeId,
+      nominatorId,
+    });
+
+    if (!validation.ok) return validation;
+
+    normalizedNominations.push({
+      categoryId: category.id,
+      nomineeId: nomination.nomineeId,
+      statement: compactText(nomination.statement),
+    });
+  }
+
+  return { ok: true, nominations: normalizedNominations };
+}
+
 export function suggestFinalists({ members, category, nominations }) {
   const counts = new Map();
 

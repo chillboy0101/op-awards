@@ -10,6 +10,7 @@ import {
   createVoteReceipt,
   recordAnonymousVotes,
   suggestFinalists,
+  validateNominationBatch,
   validateBallotSelections,
   validateCategorySetup,
   validateNomination,
@@ -100,6 +101,48 @@ describe("nomination directory", () => {
         selectable: false,
       },
     ]);
+  });
+});
+
+describe("nomination ballot", () => {
+  const categories = [
+    { id: "cat-leadership", title: "Leadership Excellence", active: true, nominationLimit: 1 },
+    { id: "cat-service", title: "Member Service", active: true, nominationLimit: 1 },
+  ];
+
+  it("requires one peer selection per active category and keeps reasons optional", () => {
+    assert.deepEqual(
+      validateNominationBatch({
+        categories,
+        existingNominations: [],
+        members,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-2", statement: "" },
+        ],
+        nominatorId: "mem-1",
+      }),
+      { ok: false, reason: "INCOMPLETE_NOMINATION_BALLOT" },
+    );
+
+    assert.deepEqual(
+      validateNominationBatch({
+        categories,
+        existingNominations: [],
+        members,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-2", statement: "" },
+          { categoryId: "cat-service", nomineeId: "mem-4", statement: "Helpful during clinics" },
+        ],
+        nominatorId: "mem-1",
+      }),
+      {
+        ok: true,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-2", statement: "" },
+          { categoryId: "cat-service", nomineeId: "mem-4", statement: "Helpful during clinics" },
+        ],
+      },
+    );
   });
 });
 
