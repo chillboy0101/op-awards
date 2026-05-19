@@ -21,7 +21,13 @@ export default function RootLayout({
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return page;
 
   return (
-    <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      signInFallbackRedirectUrl="/member"
+      signInUrl="/sign-in"
+      signUpFallbackRedirectUrl="/member"
+      signUpUrl="/sign-up"
+    >
       {page}
     </ClerkProvider>
   );

@@ -41,3 +41,16 @@ export function buildClerkAccountPortalUrl({
 
   return accountPortalUrl.toString();
 }
+
+export function buildClerkLocalAuthProps({ page, redirectPath = "/member" }) {
+  const safeRedirectPath = safeAuthRedirectPath(redirectPath, "/member");
+  const authPath = page === "sign-up" ? "/sign-up" : "/sign-in";
+
+  return {
+    fallbackRedirectUrl: "/member",
+    forceRedirectUrl: safeRedirectPath,
+    path: authPath,
+    routing: "path",
+    ...(page === "sign-up" ? { signInUrl: "/sign-in" } : { signUpUrl: "/sign-up" }),
+  };
+}

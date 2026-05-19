@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildClerkLocalAuthProps,
   buildClerkAccountPortalUrl,
   clerkAccountPortalOriginFromPublishableKey,
   safeAuthRedirectPath,
@@ -26,6 +27,22 @@ describe("Clerk Account Portal redirects", () => {
         redirectPath: "/member",
       }),
       "https://legal-fish-61.clerk.accounts.dev/sign-in?redirect_url=https%3A%2F%2Fcpa-awards.vercel.app%2Fmember",
+    );
+  });
+
+  it("builds app-local embedded Clerk auth props instead of a hosted accounts.dev URL", () => {
+    assert.deepEqual(
+      buildClerkLocalAuthProps({
+        page: "sign-in",
+        redirectPath: "https://evil.example/member",
+      }),
+      {
+        fallbackRedirectUrl: "/member",
+        forceRedirectUrl: "/member",
+        path: "/sign-in",
+        routing: "path",
+        signUpUrl: "/sign-up",
+      },
     );
   });
 

@@ -347,7 +347,6 @@ function NominationExperience({
           <p className="eyebrow">Nomination</p>
           <h2>Pick a person</h2>
         </div>
-        <StagePill stage="Open" />
       </div>
       <CategoryPicker
         categories={activeCategories}
