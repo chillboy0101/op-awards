@@ -29,13 +29,38 @@ npm run build
 
 ## What Is Included
 
-- Public winners/archive view.
-- Member nomination with searchable tap-to-select roster cards.
+- Public `/` live view with cycle status and published winners only.
+- Clerk-protected `/member` for existing Latewatch organization users.
+- Phase-gated member work: nominations show only during nominations, ballots show only during voting.
+- `/admin` for users with `publicMetadata.cpaAwards.role = "admin"`.
+- Clerk roster sync into CPA Awards member records through `clerk_user_id`.
+- Member nomination with searchable tap-to-select people cards and profile photos.
 - Anonymous ballot flow with finalist cards and vote receipts.
-- Reviewer nomination queue.
-- Admin command center for cycles, roster, Cloudinary photo signing, categories, runoff creation, certification, email, and audit events.
+- Admin command center for cycle stage, roster sync, manual member add, runoff creation, certification, email, and audit events.
 - Neon/Drizzle schema and migration for members, staff users, magic links, sessions, cycles, categories, nominations, finalists, vote receipts, anonymous votes, result certification, Cloudinary assets, and audit events.
-- Resend-backed magic link and vote receipt helpers.
+- Resend-backed vote receipt helpers.
 - Tested domain logic and production service helpers.
+
+## Clerk Setup
+
+CPA Awards uses the existing Latewatch Clerk app and organization. Add these env vars locally and in Vercel:
+
+```bash
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+CLERK_ALLOWED_ORG_ID=
+```
+
+Admin access is namespaced so it does not affect Latewatch:
+
+```json
+{
+  "cpaAwards": {
+    "role": "admin"
+  }
+}
+```
 
 See `docs/awards-system.md` for the production rules and database model.

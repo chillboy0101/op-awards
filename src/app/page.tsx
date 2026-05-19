@@ -1,9 +1,8 @@
-import { AwardsPortal } from "@/components/awards-portal";
-import { getCurrentUser } from "@/lib/auth/current-user";
+import { PublicAwardsPage } from "@/components/awards-portal";
 import { getPortalData } from "@/lib/awards/repository";
 
 export default async function Home() {
-  const [model, currentUser] = await Promise.all([getPortalData(), getCurrentUser()]);
+  const model = await getPortalData();
 
-  return <AwardsPortal currentUser={currentUser} model={model} />;
+  return <PublicAwardsPage model={model} />;
 }

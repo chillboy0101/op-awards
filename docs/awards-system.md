@@ -2,8 +2,10 @@
 
 ## Product Rules
 
-- CPA members sign in with email magic links and must exist in the active member roster.
+- CPA members sign in with the existing Latewatch Clerk app and must belong to the configured Clerk organization.
+- CPA Awards admin access comes from `publicMetadata.cpaAwards.role = "admin"`.
 - Members may nominate active CPA members only; self-nominations are rejected.
+- Members only see the current action for the cycle: nominations during the nominations stage, voting during the voting stage, and a short status otherwise.
 - Default nomination limit is one nomination per member per category.
 - Reviewers can score nominations, flag duplicates, request more information, and recommend finalists.
 - Admins manage the roster, award cycles, categories, dates, finalist approval, runoff creation, result certification, and publication.
@@ -14,16 +16,15 @@
 
 ## Application Surfaces
 
-- Public view: awards information and certified winner archive only.
-- Member view: profile status, nomination form, ballot, and vote receipt.
-- Reviewer view: nomination review queue with status and duplicate-risk handling.
-- Admin view: cycle controls, roster, category questions, result certification, runoff creation, essential email, and audit log.
+- Public `/`: awards information and certified winner archive only.
+- Member `/member`: Clerk-protected member work for the current phase only.
+- Admin `/admin`: Clerk org member plus CPA Awards admin metadata.
 
 ## Persistent Model
 
 The app now has a Drizzle/Neon persistence layer with an offline seeded fallback for local development without `DATABASE_URL`. Production uses these core tables:
 
-- `members`: identity, email, chapter, active/inactive status, Cloudinary photo metadata, audit timestamps.
+- `members`: Clerk user id, identity, email, chapter, active/inactive status, Cloudinary photo metadata, audit timestamps.
 - `staff_users`: admin/reviewer role assignments tied to member or staff email.
 - `award_cycles`: cycle title, phase, nomination/voting/certification dates, publication state.
 - `categories`: cycle, title, description, custom nomination question, finalist limit, nomination limit, active flag.
@@ -39,7 +40,8 @@ The app now has a Drizzle/Neon persistence layer with an offline seeded fallback
 
 - Framework: Next.js App Router on Vercel.
 - Database: Neon Postgres using `@neondatabase/serverless` and Drizzle migrations.
-- Email: Resend for magic links, vote receipts, and admin alerts.
+- Auth: existing Latewatch Clerk app and organization.
+- Email: Resend for vote receipts and admin alerts.
 - Media: Cloudinary signed upload flow for admin-managed member photos and award assets.
 - Authorization: validate role and member status inside server actions and route handlers, not only in proxy/middleware.
 - Audit: write staff-side mutations to `audit_events`.
@@ -48,7 +50,7 @@ The app now has a Drizzle/Neon persistence layer with an offline seeded fallback
 ## Local Setup
 
 1. Copy `.env.example` to `.env.local`.
-2. Set `DATABASE_URL`, `APP_URL`, `AUTH_SECRET`, and the Resend/Cloudinary keys for production-like local runs.
+2. Set `DATABASE_URL`, the Clerk keys, `CLERK_ALLOWED_ORG_ID`, and the Resend/Cloudinary keys for production-like local runs.
 3. Run `npm run db:migrate`.
 4. Run `npm run db:seed`.
 
@@ -56,6 +58,8 @@ The app now has a Drizzle/Neon persistence layer with an offline seeded fallback
 
 - Domain rules are covered by `tests/awards-workflow.test.mjs`.
 - Production service helpers are covered by `tests/production-services.test.mjs`.
+- Clerk role/org helpers are covered by `tests/clerk-access.test.mjs`.
+- Phase gating is covered by `tests/phase-gating.test.mjs`.
 - Run `npm test` for workflow behavior.
 - Run `npm run lint` for code quality.
 - Run `npm run build` for type checking and production build validation.

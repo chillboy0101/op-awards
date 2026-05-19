@@ -7,6 +7,9 @@ import { z } from "zod";
 import { getDb, hasDatabaseUrl, schema } from "@/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { assertRole } from "@/lib/auth/security";
+import { syncAllowedOrganizationMembers } from "@/lib/auth/clerk-members";
+import { awardModel } from "@/lib/awards/data";
+import { getMemberPhaseAccess } from "@/lib/awards/phase";
 import { sendVoteReceiptEmail } from "@/lib/email/resend";
 
 const nominationSchema = z.object({
@@ -29,6 +32,11 @@ const memberSchema = z.object({
   status: z.enum(["active", "inactive"]),
 });
 
+const cycleStageSchema = z.object({
+  cycleId: z.string().min(1),
+  stage: z.enum(["draft", "nominations", "review", "voting", "certification", "published"]),
+});
+
 export async function createNominationAction(input: unknown) {
   const user = await getCurrentUser();
 
@@ -42,6 +50,10 @@ export async function createNominationAction(input: unknown) {
   }
 
   if (!hasDatabaseUrl()) {
+    if (!getMemberPhaseAccess(awardModel.cycle.stage).canNominate) {
+      return { ok: false, error: "Nominations are not open." };
+    }
+
     return { ok: true, demo: true };
   }
 
@@ -53,6 +65,16 @@ export async function createNominationAction(input: unknown) {
     .limit(1);
 
   if (!category) return { ok: false, error: "Category not found." };
+
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, category.cycleId))
+    .limit(1);
+
+  if (!cycle || !getMemberPhaseAccess(cycle.stage).canNominate) {
+    return { ok: false, error: "Nominations are not open." };
+  }
 
   await db.insert(schema.nominations).values({
     categoryId: parsed.data.categoryId,
@@ -78,11 +100,24 @@ export async function submitBallotAction(input: unknown) {
   const confirmationCode = `CPA-${nanoid(10).toUpperCase()}`;
 
   if (!hasDatabaseUrl()) {
+    if (!getMemberPhaseAccess(awardModel.cycle.stage).canVote) {
+      return { ok: false, error: "Voting is not open." };
+    }
+
     return { ok: true, demo: true, confirmationCode };
   }
 
   const db = getDb();
   const categoryIds = Object.keys(parsed.data.selections);
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, parsed.data.cycleId))
+    .limit(1);
+
+  if (!cycle || !getMemberPhaseAccess(cycle.stage).canVote) {
+    return { ok: false, error: "Voting is not open." };
+  }
 
   await db.insert(schema.voteReceipts).values({
     categoryIds,
@@ -130,6 +165,48 @@ export async function upsertMemberAction(input: unknown) {
     photoUrl: parsed.data.photoUrl || null,
     status: parsed.data.status,
   });
+
+  return { ok: true };
+}
+
+export async function syncClerkRosterAction() {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true, count: 0 };
+
+  const members = await syncAllowedOrganizationMembers();
+
+  return { ok: true, count: members.length };
+}
+
+export async function updateCycleStageAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = cycleStageSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Choose a valid cycle stage." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  await getDb()
+    .update(schema.awardCycles)
+    .set({ stage: parsed.data.stage, updatedAt: new Date() })
+    .where(eq(schema.awardCycles.id, parsed.data.cycleId));
 
   return { ok: true };
 }

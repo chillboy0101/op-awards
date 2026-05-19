@@ -46,6 +46,7 @@ export const members = pgTable(
   "members",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    clerkUserId: text("clerk_user_id"),
     name: text("name").notNull(),
     email: text("email").notNull(),
     chapter: text("chapter").notNull().default("General"),
@@ -56,6 +57,7 @@ export const members = pgTable(
     ...timestamps,
   },
   (table) => ({
+    clerkUserIdUnique: uniqueIndex("members_clerk_user_id_unique").on(table.clerkUserId),
     emailUnique: uniqueIndex("members_email_unique").on(table.email),
   }),
 );

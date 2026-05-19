@@ -1,5 +1,7 @@
 "use client";
 
+import { SignOutButton } from "@clerk/nextjs";
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 
 import {
@@ -7,40 +9,39 @@ import {
   createNominationAction,
   createRunoffAction,
   submitBallotAction,
+  syncClerkRosterAction,
+  updateCycleStageAction,
   upsertMemberAction,
 } from "@/app/actions";
-import {
-  type AwardStage,
-  type Category,
-  type Finalist,
-  type Member,
-} from "@/lib/awards/data";
+import { getMemberPhaseAccess } from "@/lib/awards/phase";
+import type { Category, Finalist, Member } from "@/lib/awards/data";
 import type { AwardPortalModel } from "@/lib/awards/repository";
 import type { CurrentUser } from "@/lib/auth/service";
 
-type ViewKey = "public" | "member" | "reviewer" | "admin";
 type VoteSelections = Record<string, string>;
-type ReviewStatus = "new" | "recommended" | "needs-info" | "approved";
+type PortalResult = {
+  count?: number;
+  demo?: boolean;
+  error?: string;
+  ok: boolean;
+  confirmationCode?: string;
+};
 
-type PortalResult = { ok: boolean; error?: string; confirmationCode?: string; demo?: boolean };
+const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-const roleRank = {
-  admin: 3,
-  member: 1,
-  public: 0,
-  reviewer: 2,
-} as const;
-
-const allViews: { key: ViewKey; label: string; minRole: keyof typeof roleRank }[] = [
-  { key: "public", label: "Public", minRole: "public" },
-  { key: "member", label: "Member", minRole: "member" },
-  { key: "reviewer", label: "Review", minRole: "reviewer" },
-  { key: "admin", label: "Admin", minRole: "admin" },
-];
+const stageOptions = [
+  { label: "Draft", value: "draft" },
+  { label: "Nominations", value: "nominations" },
+  { label: "Review", value: "review" },
+  { label: "Voting", value: "voting" },
+  { label: "Certification", value: "certification" },
+  { label: "Published", value: "published" },
+] as const;
 
 function initials(name: string) {
   return name
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
@@ -49,44 +50,18 @@ function initials(name: string) {
 
 function Mark() {
   return (
-    <div className="brand-mark" aria-hidden="true">
-      <span>CPA</span>
-    </div>
-  );
-}
-
-function MiniIcon({
-  name,
-}: {
-  name: "check" | "lock" | "mail" | "search" | "shield" | "upload" | "user";
-}) {
-  const paths = {
-    check: "M5 12.5 9.2 16.5 19 7",
-    lock: "M7 10V8a5 5 0 0 1 10 0v2M6 10h12v9H6z",
-    mail: "M4 6h16v12H4z M4 7l8 6 8-6",
-    search: "M10.5 18a7.5 7.5 0 1 1 5.3-2.2L20 20",
-    shield: "M12 3 19 6v5c0 4.5-2.8 7.5-7 9-4.2-1.5-7-4.5-7-9V6z",
-    upload: "M12 16V4m0 0 4 4m-4-4-4 4M5 18h14",
-    user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0",
-  };
-
-  return (
-    <svg className="mini-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d={paths[name]}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <span className="brand-mark" aria-hidden="true">
+      CPA
+    </span>
   );
 }
 
 function PersonAvatar({ member, name }: { member?: Pick<Member, "name" | "photoUrl">; name: string }) {
-  if (member?.photoUrl) {
+  const photoUrl = member?.photoUrl;
+
+  if (photoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img className="avatar" src={member.photoUrl} alt="" />;
+    return <img className="avatar" src={photoUrl} alt={name} />;
   }
 
   return (
@@ -96,168 +71,116 @@ function PersonAvatar({ member, name }: { member?: Pick<Member, "name" | "photoU
   );
 }
 
-function PhaseRail({ model }: { model: AwardPortalModel }) {
-  const currentIndex = model.phases.findIndex((phase) => phase.label === model.cycle.stage);
-
-  return (
-    <ol className="phase-rail" aria-label="Awards cycle phases">
-      {model.phases.map((phase, index) => (
-        <li
-          key={phase.label}
-          className={index <= currentIndex ? "phase is-complete" : "phase"}
-        >
-          <span className="phase-dot" />
-          <span>
-            <strong>{phase.label}</strong>
-            <small>{phase.detail}</small>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function SignInPanel() {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [devLink, setDevLink] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function requestLink() {
-    setMessage(null);
-    setDevLink(null);
-    startTransition(async () => {
-      const response = await fetch("/api/auth/request-link", {
-        body: JSON.stringify({ email }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const result = (await response.json()) as {
-        devMagicLink?: string;
-        error?: string;
-        message?: string;
-      };
-
-      setMessage(result.error ?? result.message ?? "Check your email for a sign-in link.");
-      setDevLink(result.devMagicLink ?? null);
-    });
-  }
-
-  return (
-    <div className="panel sign-in-panel">
-      <div className="panel-head">
-        <div>
-          <p className="section-label">Member access</p>
-          <h2>Email sign-in</h2>
-        </div>
-        <MiniIcon name="mail" />
-      </div>
-      <label>
-        Email address
-        <input
-          autoComplete="email"
-          inputMode="email"
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="member@example.com"
-          type="email"
-          value={email}
-        />
-      </label>
-      <button className="primary-action" disabled={pending || !email} onClick={requestLink} type="button">
-        {pending ? "Sending" : "Send sign-in link"}
-      </button>
-      {message ? <div className="notice">{message}</div> : null}
-      {devLink ? (
-        <a className="dev-link" href={devLink}>
-          Open development sign-in
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
-function PublicView({
+function Header({
+  active,
   currentUser,
-  model,
-  published,
 }: {
-  currentUser: CurrentUser | null;
-  model: AwardPortalModel;
-  published: boolean;
+  active: "admin" | "member" | "public";
+  currentUser?: CurrentUser | null;
 }) {
   return (
-    <section className="view-grid public-grid">
-      <div className="feature-panel full-span">
+    <header className="topbar">
+      <Link className="brand" href="/" aria-label="CPA Awards home">
+        <Mark />
+        <span>
+          <strong>CPA Awards</strong>
+          <small>{active === "public" ? "Live" : currentUser?.member.name ?? "Member"}</small>
+        </span>
+      </Link>
+      <nav className="nav-links" aria-label="CPA Awards navigation">
+        <Link className={active === "public" ? "is-active" : ""} href="/">
+          Public
+        </Link>
+        <Link className={active === "member" ? "is-active" : ""} href="/member">
+          Member
+        </Link>
+        {active === "admin" || currentUser?.role === "admin" ? (
+          <Link className={active === "admin" ? "is-active" : ""} href="/admin">
+            Admin
+          </Link>
+        ) : null}
+        {clerkEnabled ? (
+          currentUser ? (
+            <SignOutButton>
+              <button className="text-button" type="button">
+                Sign out
+              </button>
+            </SignOutButton>
+          ) : (
+            <Link className="text-button" href="/sign-in">
+              Sign in
+            </Link>
+          )
+        ) : null}
+      </nav>
+    </header>
+  );
+}
+
+function StagePill({ stage }: { stage: string }) {
+  return <span className="stage-pill">{stage}</span>;
+}
+
+function EmptyState({ message }: { message: string }) {
+  return <div className="empty-state">{message}</div>;
+}
+
+function PublicWinners({ model }: { model: AwardPortalModel }) {
+  const published = model.cycle.stage === "Published";
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
         <div>
-          <p className="section-label">Awards cycle</p>
-          <h1>{model.cycle.title}</h1>
-          <p className="lede">
-            A private CPA member space for nominations, finalist voting, certification, and
-            the public winners archive.
-          </p>
+          <p className="eyebrow">Results</p>
+          <h2>{published ? "Winners" : "Pending"}</h2>
         </div>
-        <div className="date-band" aria-label="Important dates">
-          <span>
-            <strong>{model.cycle.nominationsOpen}</strong>
-            nominations open
-          </span>
-          <span>
-            <strong>{model.cycle.votingOpen}</strong>
-            voting opens
-          </span>
-          <span>
-            <strong>{model.cycle.publishDate}</strong>
-            winners published
-          </span>
-        </div>
+        <StagePill stage={published ? "Published" : model.cycle.publishDate} />
       </div>
-
-      <div className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Archive</p>
-            <h2>Certified winners</h2>
+      <div className="result-list">
+        {model.results.map((result) => (
+          <div className="result-row" key={result.category}>
+            <span>{result.category}</span>
+            <strong>{published ? result.leader : "Not published"}</strong>
           </div>
-          <span className={published ? "status good" : "status warn"}>
-            {published ? "Published" : "Pending"}
-          </span>
-        </div>
-        <div className="winner-list">
-          {model.results.map((result) => (
-            <article key={result.category} className="winner-row">
-              <span>{result.category}</span>
-              <strong>{published ? result.leader : "Certification pending"}</strong>
-            </article>
-          ))}
-        </div>
+        ))}
       </div>
-
-      {currentUser ? (
-        <div className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="section-label">Signed in</p>
-              <h2>{currentUser.member.name}</h2>
-            </div>
-            <span className="status good">{currentUser.role}</span>
-          </div>
-          <div className="profile-card">
-            <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
-            <span>
-              <strong>{currentUser.member.email}</strong>
-              <small>{currentUser.member.chapter} chapter</small>
-            </span>
-          </div>
-          <form action="/api/auth/sign-out" method="post">
-            <button className="secondary-action" type="submit">
-              Sign out
-            </button>
-          </form>
-        </div>
-      ) : (
-        <SignInPanel />
-      )}
     </section>
+  );
+}
+
+export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
+  return (
+    <main className="app-shell">
+      <Header active="public" />
+      <section className="hero-panel">
+        <div>
+          <p className="eyebrow">Current cycle</p>
+          <h1>{model.cycle.title}</h1>
+        </div>
+        <div className="hero-side">
+          <StagePill stage={model.cycle.stage} />
+          <Link className="primary-action" href="/member">
+            Member access
+          </Link>
+        </div>
+      </section>
+      <section className="date-grid" aria-label="Key dates">
+        <span>
+          <strong>{model.cycle.nominationsOpen}</strong>
+          Nominations
+        </span>
+        <span>
+          <strong>{model.cycle.votingOpen}</strong>
+          Voting
+        </span>
+        <span>
+          <strong>{model.cycle.publishDate}</strong>
+          Results
+        </span>
+      </section>
+      <PublicWinners model={model} />
+    </main>
   );
 }
 
@@ -271,7 +194,7 @@ function CategoryPicker({
   setSelectedCategory: (categoryId: string) => void;
 }) {
   return (
-    <div className="category-picker" aria-label="Award category">
+    <div className="chip-row" aria-label="Award categories">
       {categories.map((category) => (
         <button
           className={selectedCategory === category.id ? "choice-chip is-selected" : "choice-chip"}
@@ -279,8 +202,7 @@ function CategoryPicker({
           onClick={() => setSelectedCategory(category.id)}
           type="button"
         >
-          <strong>{category.title}</strong>
-          <small>{category.finalistLimit} finalists</small>
+          {category.title}
         </button>
       ))}
     </div>
@@ -299,25 +221,21 @@ function MemberDirectory({
   setSelectedNominee: (memberId: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const eligibleMembers = members.filter(
-    (member) => member.status === "active" && member.id !== currentMemberId,
-  );
-  const filteredMembers = eligibleMembers.filter((member) => {
-    const haystack = `${member.name} ${member.chapter} ${member.email}`.toLowerCase();
-    return haystack.includes(query.trim().toLowerCase());
-  });
+  const filteredMembers = members
+    .filter((member) => member.status === "active" && member.id !== currentMemberId)
+    .filter((member) =>
+      `${member.name} ${member.email} ${member.chapter}`.toLowerCase().includes(query.toLowerCase()),
+    );
 
   return (
     <div className="directory-block">
-      <label className="search-field">
-        <MiniIcon name="search" />
-        <input
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search members"
-          type="search"
-          value={query}
-        />
-      </label>
+      <input
+        aria-label="Search members"
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search people"
+        type="search"
+        value={query}
+      />
       <div className="people-list">
         {filteredMembers.map((member) => (
           <button
@@ -329,17 +247,86 @@ function MemberDirectory({
             <PersonAvatar member={member} name={member.name} />
             <span>
               <strong>{member.name}</strong>
-              <small>
-                {member.chapter} chapter · joined {member.joined || "member"}
-              </small>
-            </span>
-            <span className="select-dot" aria-hidden="true">
-              <MiniIcon name="check" />
+              <small>{member.chapter}</small>
             </span>
           </button>
         ))}
       </div>
+      {filteredMembers.length === 0 ? <EmptyState message="No matching members." /> : null}
     </div>
+  );
+}
+
+function NominationExperience({
+  currentUser,
+  model,
+}: {
+  currentUser: CurrentUser;
+  model: AwardPortalModel;
+}) {
+  const firstCategoryId = model.categories[0]?.id ?? "";
+  const [selectedCategory, setSelectedCategory] = useState(firstCategoryId);
+  const firstNominee = model.members.find(
+    (member) => member.status === "active" && member.id !== currentUser.member.id,
+  )?.id;
+  const [nominee, setNominee] = useState(firstNominee ?? "");
+  const [statement, setStatement] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const selectedQuestion = model.categories.find((category) => category.id === selectedCategory)?.question;
+
+  function submitNomination() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await createNominationAction({
+        categoryId: selectedCategory,
+        nomineeId: nominee,
+        statement,
+      })) as PortalResult;
+
+      setMessage(result.ok ? "Saved." : result.error ?? "Unable to save.");
+    });
+  }
+
+  return (
+    <section className="panel work-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Nomination</p>
+          <h2>Pick a person</h2>
+        </div>
+        <StagePill stage="Open" />
+      </div>
+      <CategoryPicker
+        categories={model.categories}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+      />
+      <MemberDirectory
+        currentMemberId={currentUser.member.id}
+        members={model.members}
+        selectedNominee={nominee}
+        setSelectedNominee={setNominee}
+      />
+      <label>
+        <span>Why this person?</span>
+        <textarea
+          onChange={(event) => setStatement(event.target.value)}
+          placeholder={selectedQuestion}
+          rows={4}
+          value={statement}
+        />
+      </label>
+      <button
+        className="primary-action"
+        disabled={!nominee || statement.trim().length < 20 || pending}
+        onClick={submitNomination}
+        type="button"
+      >
+        {pending ? "Saving" : "Submit nomination"}
+      </button>
+      {message ? <div className="notice">{message}</div> : null}
+    </section>
   );
 }
 
@@ -362,462 +349,250 @@ function FinalistCard({
       onClick={() => setSelected(finalist.id)}
       type="button"
     >
-      <span className="finalist-top">
-        <PersonAvatar member={member} name={finalist.displayName} />
-        <span>
-          <strong>{finalist.displayName}</strong>
-          <small>{category.title}</small>
-        </span>
-      </span>
-      <span className="finalist-summary">{finalist.summary ?? "Approved finalist"}</span>
-      <span className="finalist-meta">
-        <span>{finalist.nominationCount} nominations</span>
-        <span className="select-dot" aria-hidden="true">
-          <MiniIcon name="check" />
-        </span>
+      <PersonAvatar member={member ?? { name: finalist.displayName, photoUrl: finalist.photoUrl }} name={finalist.displayName} />
+      <span>
+        <strong>{finalist.displayName}</strong>
+        <small>{category.title}</small>
       </span>
     </button>
   );
 }
 
-function MemberView({ currentUser, model }: { currentUser: CurrentUser; model: AwardPortalModel }) {
-  const [selectedCategory, setSelectedCategory] = useState(model.categories[0]?.id ?? "");
-  const [nominee, setNominee] = useState(
-    model.members.find(
-      (member) => member.status === "active" && member.id !== currentUser.member.id,
-    )?.id ?? "",
-  );
-  const [statement, setStatement] = useState("");
-  const [supportingLink, setSupportingLink] = useState("");
-  const [nominationMessage, setNominationMessage] = useState<string | null>(null);
-  const [voteSelections, setVoteSelections] = useState<VoteSelections>({});
+function VotingExperience({ model }: { model: AwardPortalModel }) {
+  const [selections, setSelections] = useState<VoteSelections>({});
   const [receipt, setReceipt] = useState<string | null>(null);
-  const [ballotMessage, setBallotMessage] = useState<string | null>(null);
-  const [pendingNomination, startNominationTransition] = useTransition();
-  const [pendingBallot, startBallotTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const memberById = useMemo(
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
   );
-  const selectedQuestion = model.categories.find(
-    (category) => category.id === selectedCategory,
-  )?.question;
-  const votedCategoryCount = Object.keys(voteSelections).length;
   const categoriesWithFinalists = model.categories.filter((category) =>
     model.finalists.some((finalist) => finalist.categoryId === category.id),
   );
-  const ballotReady =
+  const ready =
     categoriesWithFinalists.length > 0 &&
-    categoriesWithFinalists.every((category) => voteSelections[category.id]);
-
-  function submitNomination() {
-    setNominationMessage(null);
-    startNominationTransition(async () => {
-      const result = (await createNominationAction({
-        categoryId: selectedCategory,
-        nomineeId: nominee,
-        statement,
-        supportingLink,
-      })) as PortalResult;
-
-      setNominationMessage(
-        result.ok
-          ? result.demo
-            ? "Demo nomination saved locally."
-            : "Nomination saved."
-          : result.error ?? "Unable to save nomination.",
-      );
-    });
-  }
+    categoriesWithFinalists.every((category) => selections[category.id]);
 
   function submitBallot() {
-    setBallotMessage(null);
-    startBallotTransition(async () => {
+    setMessage(null);
+    startTransition(async () => {
       const result = (await submitBallotAction({
         cycleId: model.cycle.id,
-        selections: voteSelections,
+        selections,
       })) as PortalResult;
 
       if (result.ok) {
-        setReceipt(result.confirmationCode ?? `CPA-${model.cycle.id.slice(0, 8).toUpperCase()}`);
+        setReceipt(result.confirmationCode ?? "CPA-RECORDED");
       } else {
-        setBallotMessage(result.error ?? "Unable to submit ballot.");
+        setMessage(result.error ?? "Unable to submit ballot.");
       }
     });
   }
 
   return (
-    <section className="view-grid member-grid">
-      <div className="panel profile-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Signed in</p>
-            <h2>{currentUser.member.name}</h2>
-          </div>
-          <span className="status good">Active member</span>
+    <section className="panel work-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Ballot</p>
+          <h2>Tap one finalist</h2>
         </div>
-        <div className="profile-card">
-          <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
-          <span>
-            <strong>{currentUser.member.email}</strong>
-            <small>{currentUser.member.chapter} chapter</small>
-          </span>
-        </div>
-        <div className="metric-strip">
-          <span>
-            <strong>{model.categories.length}</strong>
-            categories
-          </span>
-          <span>
-            <strong>{votedCategoryCount}</strong>
-            selected
-          </span>
-        </div>
+        <StagePill stage="Open" />
       </div>
+      <div className="ballot-list">
+        {categoriesWithFinalists.map((category) => {
+          const finalists = model.finalists.filter((finalist) => finalist.categoryId === category.id);
 
-      <form className="panel form-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Peer nomination</p>
-            <h2>Nominate a member</h2>
-          </div>
-          <span className="status neutral">1 per category</span>
-        </div>
-        <CategoryPicker
-          categories={model.categories}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-        />
-        <MemberDirectory
-          currentMemberId={currentUser.member.id}
-          members={model.members}
-          selectedNominee={nominee}
-          setSelectedNominee={setNominee}
-        />
-        <label>
-          Nomination statement
-          <textarea
-            onChange={(event) => setStatement(event.target.value)}
-            placeholder={selectedQuestion}
-            rows={5}
-            value={statement}
-          />
-        </label>
-        <label>
-          Supporting link
-          <input
-            onChange={(event) => setSupportingLink(event.target.value)}
-            placeholder="https://..."
-            type="url"
-            value={supportingLink}
-          />
-        </label>
-        <button
-          className="primary-action"
-          disabled={!statement.trim() || !nominee || pendingNomination}
-          onClick={submitNomination}
-          type="button"
-        >
-          {pendingNomination ? "Saving" : "Save nomination"}
-        </button>
-        {nominationMessage ? <div className="notice">{nominationMessage}</div> : null}
-      </form>
-
-      <div className="panel ballot-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Anonymous ballot</p>
-            <h2>Vote once per category</h2>
-          </div>
-          <span className="status good">Voting open</span>
-        </div>
-        <div className="ballot-list">
-          {categoriesWithFinalists.map((category) => {
-            const finalists = model.finalists.filter(
-              (finalist) => finalist.categoryId === category.id,
-            );
-
-            return (
-              <section className="ballot-category" key={category.id}>
-                <div className="ballot-category-head">
-                  <h3>{category.title}</h3>
-                  <span>{finalists.length} finalists</span>
-                </div>
-                <div className="finalist-grid">
-                  {finalists.map((finalist) => (
-                    <FinalistCard
-                      category={category}
-                      finalist={finalist}
-                      key={finalist.id}
-                      member={memberById.get(finalist.nomineeId)}
-                      selected={voteSelections[category.id] === finalist.id}
-                      setSelected={(finalistId) =>
-                        setVoteSelections((current) => ({
-                          ...current,
-                          [category.id]: finalistId,
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-        <button
-          className="primary-action"
-          disabled={!ballotReady || pendingBallot}
-          onClick={submitBallot}
-          type="button"
-        >
-          {pendingBallot ? "Submitting" : "Submit ballot"}
-        </button>
-        {receipt ? (
-          <div className="receipt">
-            Receipt <strong>{receipt}</strong>
-            <span>Selections are stored without member identity.</span>
-          </div>
-        ) : null}
-        {ballotMessage ? <div className="notice warn">{ballotMessage}</div> : null}
+          return (
+            <section className="ballot-category" key={category.id}>
+              <h3>{category.title}</h3>
+              <div className="finalist-grid">
+                {finalists.map((finalist) => (
+                  <FinalistCard
+                    category={category}
+                    finalist={finalist}
+                    key={finalist.id}
+                    member={memberById.get(finalist.nomineeId)}
+                    selected={selections[category.id] === finalist.id}
+                    setSelected={(finalistId) =>
+                      setSelections((current) => ({
+                        ...current,
+                        [category.id]: finalistId,
+                      }))
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
+      {categoriesWithFinalists.length === 0 ? <EmptyState message="No ballot is ready yet." /> : null}
+      <button className="primary-action" disabled={!ready || pending} onClick={submitBallot} type="button">
+        {pending ? "Submitting" : "Submit ballot"}
+      </button>
+      {receipt ? <div className="notice good">Receipt {receipt}</div> : null}
+      {message ? <div className="notice warn">{message}</div> : null}
     </section>
   );
 }
 
-function ReviewerView({ model }: { model: AwardPortalModel }) {
-  const [reviewStatuses, setReviewStatuses] = useState<Record<string, ReviewStatus>>(
-    Object.fromEntries(model.nominations.map((nomination) => [nomination.id, nomination.status])),
-  );
-  const categoryById = useMemo(
-    () => new Map(model.categories.map((category) => [category.id, category])),
-    [model.categories],
-  );
-  const memberById = useMemo(
-    () => new Map(model.members.map((member) => [member.id, member])),
-    [model.members],
-  );
+export function MemberAwardsPage({
+  currentUser,
+  model,
+}: {
+  currentUser: CurrentUser;
+  model: AwardPortalModel;
+}) {
+  const access = getMemberPhaseAccess(model.cycle.stage);
 
   return (
-    <section className="view-grid">
-      <div className="panel full-span">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Reviewer queue</p>
-            <h2>Nomination review</h2>
-          </div>
-          <span className="status neutral">Limited access</span>
+    <main className="app-shell">
+      <Header active="member" currentUser={currentUser} />
+      <section className="member-hero">
+        <div>
+          <p className="eyebrow">Member portal</p>
+          <h1>{access.label}</h1>
+          <p>{access.message}</p>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Nominee</th>
-                <th>Statement</th>
-                <th>Score</th>
-                <th>Duplicate</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {model.nominations.map((nomination) => (
-                <tr key={nomination.id}>
-                  <td>{categoryById.get(nomination.categoryId)?.title ?? "Unknown category"}</td>
-                  <td>{memberById.get(nomination.nomineeId)?.name ?? "Unknown member"}</td>
-                  <td>{nomination.statement}</td>
-                  <td>{nomination.reviewerScore}</td>
-                  <td>
-                    <span className={`risk ${nomination.duplicateRisk}`}>
-                      {nomination.duplicateRisk}
-                    </span>
-                  </td>
-                  <td>
-                    <select
-                      onChange={(event) =>
-                        setReviewStatuses((current) => ({
-                          ...current,
-                          [nomination.id]: event.target.value as ReviewStatus,
-                        }))
-                      }
-                      value={reviewStatuses[nomination.id]}
-                    >
-                      <option value="new">New</option>
-                      <option value="recommended">Recommended</option>
-                      <option value="needs-info">Needs info</option>
-                      <option value="approved">Approved</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="profile-pill">
+          <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
+          <span>{currentUser.member.name}</span>
         </div>
+      </section>
+      {access.canNominate ? <NominationExperience currentUser={currentUser} model={model} /> : null}
+      {access.canVote ? <VotingExperience model={model} /> : null}
+      {!access.canNominate && !access.canVote ? (
+        <section className="panel">
+          <EmptyState message={access.message} />
+        </section>
+      ) : null}
+    </main>
+  );
+}
+
+function AdminRoster({ model }: { model: AwardPortalModel }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function syncRoster() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await syncClerkRosterAction()) as PortalResult;
+      setMessage(result.ok ? `Synced ${result.count ?? 0} members.` : result.error ?? "Sync failed.");
+    });
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Clerk roster</p>
+          <h2>Members</h2>
+        </div>
+        <button className="secondary-action" disabled={pending} onClick={syncRoster} type="button">
+          {pending ? "Syncing" : "Sync"}
+        </button>
       </div>
+      <div className="compact-list">
+        {model.members.map((member) => (
+          <div className="compact-row" key={member.id}>
+            <PersonAvatar member={member} name={member.name} />
+            <span>
+              <strong>{member.name}</strong>
+              <small>{member.email}</small>
+            </span>
+            <StagePill stage={member.status} />
+          </div>
+        ))}
+      </div>
+      {message ? <div className="notice">{message}</div> : null}
     </section>
   );
 }
 
-function AdminView({
-  model,
-  published,
-  setPublished,
-}: {
-  model: AwardPortalModel;
-  published: boolean;
-  setPublished: (value: boolean) => void;
-}) {
-  const [stage, setStage] = useState(model.cycle.stage);
-  const [runoffCreated, setRunoffCreated] = useState(false);
+function AdminCycle({ model }: { model: AwardPortalModel }) {
+  const initialStage =
+    stageOptions.find((stage) => stage.label === model.cycle.stage)?.value ?? "draft";
+  const [stage, setStage] = useState<(typeof stageOptions)[number]["value"]>(initialStage);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function saveStage() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await updateCycleStageAction({
+        cycleId: model.cycle.id,
+        stage,
+      })) as PortalResult;
+
+      setMessage(result.ok ? "Stage saved." : result.error ?? "Unable to save stage.");
+    });
+  }
+
+  return (
+    <section className="panel command-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Cycle</p>
+          <h2>{model.cycle.title}</h2>
+        </div>
+        <StagePill stage={model.cycle.stage} />
+      </div>
+      <div className="stage-control">
+        <select onChange={(event) => setStage(event.target.value as typeof stage)} value={stage}>
+          {stageOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button className="primary-action" disabled={pending} onClick={saveStage} type="button">
+          Save stage
+        </button>
+      </div>
+      {message ? <div className="notice">{message}</div> : null}
+    </section>
+  );
+}
+
+function AdminMemberForm() {
   const [memberForm, setMemberForm] = useState({
-    chapter: "General",
+    chapter: "Latewatch",
     email: "",
     name: "",
     photoUrl: "",
     status: "active" as Member["status"],
   });
-  const [memberMessage, setMemberMessage] = useState<string | null>(null);
-  const [photoMessage, setPhotoMessage] = useState<string | null>(null);
-  const [pendingMember, startMemberTransition] = useTransition();
-  const [pendingPhoto, startPhotoTransition] = useTransition();
-
-  const activeMembers = useMemo(
-    () => model.members.filter((member) => member.status === "active").length,
-    [model.members],
-  );
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
   function saveMember() {
-    setMemberMessage(null);
-    startMemberTransition(async () => {
+    setMessage(null);
+    startTransition(async () => {
       const result = (await upsertMemberAction(memberForm)) as PortalResult;
-      setMemberMessage(result.ok ? "Member saved." : result.error ?? "Unable to save member.");
+      setMessage(result.ok ? "Member saved." : result.error ?? "Unable to save member.");
     });
-  }
-
-  function prepareUpload(memberId: string) {
-    setPhotoMessage(null);
-    startPhotoTransition(async () => {
-      const response = await fetch("/api/cloudinary/member-photo-signature", {
-        body: JSON.stringify({ memberId }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const result = (await response.json()) as { error?: string; ok: boolean };
-      setPhotoMessage(result.ok ? "Cloudinary upload signature ready." : result.error ?? "Upload not ready.");
-    });
-  }
-
-  async function createRunoff(categoryId: string) {
-    const result = (await createRunoffAction(categoryId)) as PortalResult;
-    if (result.ok) setRunoffCreated(true);
-  }
-
-  async function publish(categoryId: string) {
-    const result = (await certifyResultsAction(categoryId)) as PortalResult;
-    if (result.ok) setPublished(true);
   }
 
   return (
-    <section className="view-grid admin-grid">
-      <div className="panel command-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Admin command</p>
-            <h2>{model.cycle.title}</h2>
-          </div>
-          <select onChange={(event) => setStage(event.target.value as AwardStage)} value={stage}>
-            {model.phases.map((phase) => (
-              <option key={phase.label} value={phase.label}>
-                {phase.label}
-              </option>
-            ))}
-          </select>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Manual add</p>
+          <h2>Member</h2>
         </div>
-        <div className="metric-grid">
-          <span>
-            <strong>{activeMembers}</strong> active members
-          </span>
-          <span>
-            <strong>{model.categories.length}</strong> categories
-          </span>
-          <span>
-            <strong>{model.nominations.length}</strong> nominations
-          </span>
-          <span>
-            <strong>{model.finalists.length}</strong> finalists
-          </span>
-        </div>
-        <div className="action-row">
-          <button
-            className="secondary-action"
-            onClick={() => createRunoff(model.categories[0]?.id ?? "")}
-            type="button"
-          >
-            Create runoff for tie
-          </button>
-          <button
-            className="primary-action"
-            onClick={() => publish(model.categories[0]?.id ?? "")}
-            type="button"
-          >
-            Certify and publish
-          </button>
-        </div>
-        {runoffCreated ? <div className="notice">Runoff category drafted.</div> : null}
-        {published ? <div className="notice good">Winners are visible in the public archive.</div> : null}
       </div>
-
-      <div className="panel roster-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Roster</p>
-            <h2>Member directory</h2>
-          </div>
-          <MiniIcon name="user" />
-        </div>
-        <div className="compact-list">
-          {model.members.map((member) => (
-            <div className="compact-row with-avatar" key={member.id}>
-              <PersonAvatar member={member} name={member.name} />
-              <span>
-                <strong>{member.name}</strong>
-                <small>{member.email}</small>
-              </span>
-              <span className={member.status === "active" ? "status good" : "status warn"}>
-                {member.status}
-              </span>
-              <button
-                aria-label={`Prepare photo upload for ${member.name}`}
-                className="icon-button"
-                disabled={pendingPhoto}
-                onClick={() => prepareUpload(member.id)}
-                title="Prepare photo upload"
-                type="button"
-              >
-                <MiniIcon name="upload" />
-              </button>
-            </div>
-          ))}
-        </div>
-        {photoMessage ? <div className="notice">{photoMessage}</div> : null}
-      </div>
-
-      <form className="panel member-editor">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Member management</p>
-            <h2>Add member</h2>
-          </div>
-          <span className="status neutral">Admin</span>
-        </div>
+      <div className="form-grid">
         <label>
-          Name
+          <span>Name</span>
           <input
             onChange={(event) => setMemberForm((current) => ({ ...current, name: event.target.value }))}
             value={memberForm.name}
           />
         </label>
         <label>
-          Email
+          <span>Email</span>
           <input
             onChange={(event) => setMemberForm((current) => ({ ...current, email: event.target.value }))}
             type="email"
@@ -825,111 +600,73 @@ function AdminView({
           />
         </label>
         <label>
-          Chapter
-          <input
-            onChange={(event) => setMemberForm((current) => ({ ...current, chapter: event.target.value }))}
-            value={memberForm.chapter}
-          />
-        </label>
-        <label>
-          Photo URL
+          <span>Photo URL</span>
           <input
             onChange={(event) => setMemberForm((current) => ({ ...current, photoUrl: event.target.value }))}
-            placeholder="https://res.cloudinary.com/..."
             type="url"
             value={memberForm.photoUrl}
           />
         </label>
-        <label>
-          Status
-          <select
-            onChange={(event) =>
-              setMemberForm((current) => ({
-                ...current,
-                status: event.target.value as Member["status"],
-              }))
-            }
-            value={memberForm.status}
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </label>
-        <button
-          className="primary-action"
-          disabled={pendingMember || !memberForm.name || !memberForm.email}
-          onClick={saveMember}
-          type="button"
-        >
-          {pendingMember ? "Saving" : "Save member"}
-        </button>
-        {memberMessage ? <div className="notice">{memberMessage}</div> : null}
-      </form>
+      </div>
+      <button className="primary-action" disabled={pending || !memberForm.name || !memberForm.email} onClick={saveMember} type="button">
+        {pending ? "Saving" : "Save member"}
+      </button>
+      {message ? <div className="notice">{message}</div> : null}
+    </section>
+  );
+}
 
-      <div className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Categories</p>
-            <h2>Custom questions</h2>
-          </div>
-          <span className="status neutral">Editable</span>
+function AdminQueues({ model }: { model: AwardPortalModel }) {
+  async function createRunoff(categoryId: string) {
+    await createRunoffAction(categoryId);
+  }
+
+  async function certify(categoryId: string) {
+    await certifyResultsAction(categoryId);
+  }
+
+  return (
+    <section className="panel wide-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Review</p>
+          <h2>Nominations and results</h2>
         </div>
-        <div className="category-list">
+      </div>
+      <div className="admin-columns">
+        <div className="mini-list">
+          {model.nominations.map((nomination) => {
+            const nominee = model.members.find((member) => member.id === nomination.nomineeId);
+            const category = model.categories.find((item) => item.id === nomination.categoryId);
+
+            return (
+              <article className="mini-row" key={nomination.id}>
+                <PersonAvatar member={nominee} name={nominee?.name ?? "Nominee"} />
+                <span>
+                  <strong>{nominee?.name ?? "Nominee"}</strong>
+                  <small>{category?.title ?? "Category"}</small>
+                </span>
+                <StagePill stage={nomination.status} />
+              </article>
+            );
+          })}
+        </div>
+        <div className="mini-list">
           {model.categories.map((category) => (
-            <article key={category.id}>
-              <strong>{category.title}</strong>
-              <p>{category.question}</p>
+            <article className="mini-row" key={category.id}>
               <span>
-                {category.finalistLimit} finalists, {category.nominationLimit} nomination per member
+                <strong>{category.title}</strong>
+                <small>{category.finalistLimit} finalists</small>
               </span>
+              <div className="row-actions">
+                <button className="secondary-action" onClick={() => createRunoff(category.id)} type="button">
+                  Runoff
+                </button>
+                <button className="primary-action" onClick={() => certify(category.id)} type="button">
+                  Certify
+                </button>
+              </div>
             </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Results</p>
-            <h2>Certification queue</h2>
-          </div>
-          <span className="status warn">Tie checks</span>
-        </div>
-        <div className="result-list">
-          {model.results.map((result) => (
-            <div className="result-row" key={result.category}>
-              <span>
-                <strong>{result.category}</strong>
-                <small>{result.leader}</small>
-              </span>
-              <span>{result.count} votes</span>
-              <span className={result.status === "ready" ? "status good" : "status warn"}>
-                {result.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="panel audit-panel">
-        <div className="panel-head">
-          <div>
-            <p className="section-label">Audit log</p>
-            <h2>Staff actions</h2>
-          </div>
-          <MiniIcon name="shield" />
-        </div>
-        <div className="compact-list">
-          {model.audit.map((event) => (
-            <div className="compact-row" key={event.id}>
-              <span>
-                <strong>{event.action}</strong>
-                <small>
-                  {event.actor} on {event.target}
-                </small>
-              </span>
-              <time>{event.time}</time>
-            </div>
           ))}
         </div>
       </div>
@@ -937,63 +674,33 @@ function AdminView({
   );
 }
 
-export function AwardsPortal({
+export function AdminAwardsPage({
   currentUser,
   model,
 }: {
-  currentUser: CurrentUser | null;
+  currentUser: CurrentUser;
   model: AwardPortalModel;
 }) {
-  const role = currentUser?.role ?? "public";
-  const availableViews = allViews.filter((view) => roleRank[role] >= roleRank[view.minRole]);
-  const [activeView, setActiveView] = useState<ViewKey>(currentUser ? "member" : "public");
-  const [published, setPublished] = useState(model.cycle.stage === "Published");
-  const visibleView = availableViews.some((view) => view.key === activeView)
-    ? activeView
-    : "public";
-
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="CPA Awards home">
-          <Mark />
-          <span>
-            <strong>CPA Awards</strong>
-            <small>Member nominations and voting</small>
-          </span>
-        </a>
-        <nav className="view-switch" aria-label="Workspace view">
-          {availableViews.map((view) => (
-            <button
-              className={visibleView === view.key ? "is-active" : ""}
-              key={view.key}
-              onClick={() => setActiveView(view.key)}
-              type="button"
-            >
-              {view.label}
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      <section className="cycle-banner" id="top">
+      <Header active="admin" currentUser={currentUser} />
+      <section className="member-hero">
         <div>
-          <p className="section-label">Current cycle</p>
-          <h1>{model.cycle.title}</h1>
+          <p className="eyebrow">Admin</p>
+          <h1>Control room</h1>
+          <p>Cycle, roster, finalists, results.</p>
         </div>
-        <PhaseRail model={model} />
+        <div className="profile-pill">
+          <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
+          <span>{currentUser.member.name}</span>
+        </div>
       </section>
-
-      {visibleView === "public" ? (
-        <PublicView currentUser={currentUser} model={model} published={published} />
-      ) : null}
-      {visibleView === "member" && currentUser ? (
-        <MemberView currentUser={currentUser} model={model} />
-      ) : null}
-      {visibleView === "reviewer" ? <ReviewerView model={model} /> : null}
-      {visibleView === "admin" ? (
-        <AdminView model={model} published={published} setPublished={setPublished} />
-      ) : null}
+      <section className="admin-grid">
+        <AdminCycle model={model} />
+        <AdminRoster model={model} />
+        <AdminMemberForm />
+        <AdminQueues model={model} />
+      </section>
     </main>
   );
 }

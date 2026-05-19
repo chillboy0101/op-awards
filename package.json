@@ -13,6 +13,7 @@
     "db:seed": "node scripts/seed.mjs"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.3.7",
     "@neondatabase/serverless": "^1.1.0",
     "cloudinary": "^2.10.0",
     "drizzle-orm": "^0.45.2",

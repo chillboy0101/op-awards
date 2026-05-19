@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 
 import { getDb, hasDatabaseUrl, schema } from "@/db";
+import { syncAllowedOrganizationMembers } from "@/lib/auth/clerk-members";
 import {
   awardModel,
   type AuditEvent,
@@ -66,8 +67,14 @@ function nominationStatus(status: string): Nomination["status"] {
   return "needs-info";
 }
 
-export async function getPortalData(): Promise<AwardPortalModel> {
+export async function getPortalData(
+  options: { includeClerkRoster?: boolean } = {},
+): Promise<AwardPortalModel> {
   if (!hasDatabaseUrl()) return awardModel;
+
+  if (options.includeClerkRoster) {
+    await syncAllowedOrganizationMembers();
+  }
 
   const db = getDb();
   const [cycle] = await db
