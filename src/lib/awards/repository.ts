@@ -12,6 +12,7 @@ import {
   type Nomination,
 } from "@/lib/awards/data";
 import { getEffectiveCycleStage } from "@/lib/awards/phase";
+import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 
 export type AwardPortalModel = {
   audit: AuditEvent[];
@@ -37,6 +38,7 @@ export type AwardPortalModel = {
   members: Member[];
   nominations: Nomination[];
   phases: typeof awardModel.phases;
+  progress: CycleProgress;
   results: {
     category: string;
     count: number;
@@ -84,9 +86,13 @@ function nominationStatus(status: string): Nomination["status"] {
 }
 
 function getFallbackPortalData(): AwardPortalModel {
-  const approvedFinalistCount = awardModel.finalists.filter(
-    (finalist) => finalist.status === "approved",
-  ).length;
+  const progress = getCycleProgress({
+    categories: awardModel.categories,
+    finalists: awardModel.finalists,
+    members: awardModel.members,
+    nominations: awardModel.nominations,
+    voteReceipts: [],
+  });
 
   return {
     ...awardModel,
@@ -94,15 +100,17 @@ function getFallbackPortalData(): AwardPortalModel {
       ...awardModel.cycle,
       configuredStage: awardModel.cycle.stage,
       stage: getEffectiveCycleStage({
-        approvedFinalistCount,
+        activeCategoryCount: progress.activeCategoryCount,
+        approvedCategoryCount: progress.approvedCategoryCount,
+        approvedFinalistCount: progress.approvedFinalistCount,
         configuredStage: awardModel.cycle.stage,
-        nominationsCloseAt: awardModel.cycle.nominationsCloseAt,
-        nominationsOpenAt: awardModel.cycle.nominationsOpenAt,
+        eligibleMemberCount: progress.eligibleMemberCount,
+        nominationCompletionCount: progress.nominationCompletionCount,
         publishedAt: awardModel.cycle.publishedAt,
-        votingCloseAt: awardModel.cycle.votingCloseAt,
-        votingOpenAt: awardModel.cycle.votingOpenAt,
+        voteReceiptCount: progress.voteReceiptCount,
       }) as AwardStage,
     },
+    progress,
   };
 }
 
@@ -124,11 +132,12 @@ export async function getPortalData(
 
   if (!cycle) return getFallbackPortalData();
 
-  const [members, categories, nominations, votes, audit] = await Promise.all([
+  const [members, categories, nominations, votes, voteReceipts, audit] = await Promise.all([
     db.select().from(schema.members).where(eq(schema.members.status, "active")),
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
     db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id)),
     db.select().from(schema.anonymousVotes).where(eq(schema.anonymousVotes.cycleId, cycle.id)),
+    db.select().from(schema.voteReceipts).where(eq(schema.voteReceipts.cycleId, cycle.id)),
     db.select().from(schema.auditEvents).orderBy(desc(schema.auditEvents.createdAt)).limit(8),
   ]);
   const categoryIds = categories.map((category) => category.id);
@@ -186,15 +195,24 @@ export async function getPortalData(
       }),
     );
   const finalistById = new Map(finalistList.map((finalist) => [finalist.id, finalist]));
+  const progress = getCycleProgress({
+    categories: categoryList,
+    certifications,
+    finalists: finalistList,
+    members: memberList,
+    nominations,
+    voteReceipts,
+  });
   const configuredStage = toStage(cycle.stage);
   const effectiveStage = getEffectiveCycleStage({
-    approvedFinalistCount: finalistList.filter((finalist) => finalist.status === "approved").length,
+    activeCategoryCount: progress.activeCategoryCount,
+    approvedCategoryCount: progress.approvedCategoryCount,
+    approvedFinalistCount: progress.approvedFinalistCount,
     configuredStage,
-    nominationsCloseAt: cycle.nominationsCloseAt,
-    nominationsOpenAt: cycle.nominationsOpenAt,
+    eligibleMemberCount: progress.eligibleMemberCount,
+    nominationCompletionCount: progress.nominationCompletionCount,
     publishedAt: cycle.publishedAt,
-    votingCloseAt: cycle.votingCloseAt,
-    votingOpenAt: cycle.votingOpenAt,
+    voteReceiptCount: progress.voteReceiptCount,
   }) as AwardStage;
 
   const results = categoryList.map((category) => {
@@ -271,6 +289,7 @@ export async function getPortalData(
       }),
     ),
     phases: awardModel.phases,
+    progress,
     results,
   };
 }

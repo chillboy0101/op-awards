@@ -1,0 +1,72 @@
+function activeItems(items) {
+  return items.filter((item) => item.active !== false && item.status !== "inactive");
+}
+
+function countUnique(values) {
+  return new Set(values.filter(Boolean)).size;
+}
+
+export function getCycleProgress({
+  categories = [],
+  certifications = [],
+  finalists = [],
+  members = [],
+  nominations = [],
+  voteReceipts = [],
+} = {}) {
+  const activeMembers = activeItems(members);
+  const activeCategories = activeItems(categories);
+  const activeMemberIds = new Set(activeMembers.map((member) => member.id));
+  const activeCategoryIds = new Set(activeCategories.map((category) => category.id));
+  const nominationsByMember = new Map();
+  let nominationSubmissionCount = 0;
+
+  for (const nomination of nominations) {
+    if (!activeMemberIds.has(nomination.nominatorId)) continue;
+    if (!activeCategoryIds.has(nomination.categoryId)) continue;
+
+    nominationSubmissionCount += 1;
+
+    const categorySet = nominationsByMember.get(nomination.nominatorId) ?? new Set();
+    categorySet.add(nomination.categoryId);
+    nominationsByMember.set(nomination.nominatorId, categorySet);
+  }
+
+  const nominationCompletionCount = [...nominationsByMember.values()].filter(
+    (categorySet) => categorySet.size >= activeCategoryIds.size && activeCategoryIds.size > 0,
+  ).length;
+  const approvedFinalists = finalists.filter(
+    (finalist) =>
+      finalist.status === "approved" && activeCategoryIds.has(finalist.categoryId),
+  );
+  const approvedCategoryCount = countUnique(
+    approvedFinalists.map((finalist) => finalist.categoryId),
+  );
+  const certifiedCategoryCount = countUnique(
+    certifications
+      .filter(
+        (certification) =>
+          activeCategoryIds.has(certification.categoryId) &&
+          ["certified", "published"].includes(certification.status),
+      )
+      .map((certification) => certification.categoryId),
+  );
+  const voteReceiptCount = countUnique(
+    voteReceipts
+      .filter((receipt) => activeMemberIds.has(receipt.memberId))
+      .map((receipt) => receipt.memberId),
+  );
+
+  return {
+    activeCategoryCount: activeCategories.length,
+    approvedCategoryCount,
+    approvedFinalistCount: approvedFinalists.length,
+    certifiedCategoryCount,
+    eligibleMemberCount: activeMembers.length,
+    nominationCompletionCount,
+    nominationSubmissionCount,
+    nominationsRequiredCount: activeMembers.length * activeCategories.length,
+    voteReceiptCount,
+    votingRequiredCount: activeMembers.length,
+  };
+}

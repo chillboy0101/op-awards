@@ -13,9 +13,8 @@ import {
   publishWinnersAction,
   submitBallotAction,
   syncClerkRosterAction,
-  updateCycleScheduleAction,
+  updateCycleStageAction,
   upsertCategoryAction,
-  upsertMemberAction,
 } from "@/app/actions";
 import { getMemberPhaseAccess } from "@/lib/awards/phase";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
@@ -41,19 +40,6 @@ function initials(name: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
-}
-
-function toDateTimeLocal(value?: string | null) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const pad = (part: number) => part.toString().padStart(2, "0");
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`;
 }
 
 function Mark() {
@@ -176,11 +162,11 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
 function getStageAction(stage: string) {
   const access = getMemberPhaseAccess(stage);
 
-  if (access.canNominate) return "Members can nominate now.";
-  if (access.canVote) return "Members can vote now.";
+  if (access.canNominate) return "Nomination is open until all members complete it.";
+  if (access.canVote) return "Voting is open until all members submit.";
   if (access.label === "Published") return "Winners are live.";
-  if (access.label === "Review") return "Review is in progress.";
-  if (access.label === "Certification") return "Results are being certified.";
+  if (access.label === "Review") return "Admin review is in progress.";
+  if (access.label === "Certification") return "Results are ready for certification.";
 
   return "The next cycle is being prepared.";
 }
@@ -202,12 +188,6 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
         <div>
           <p className="eyebrow">Current cycle</p>
           <h1>{model.cycle.title}</h1>
-        </div>
-        <div className="hero-side">
-          <StagePill stage={model.cycle.stage} />
-          <Link className="primary-action" href="/member">
-            Awards Portal
-          </Link>
         </div>
       </section>
       <PublicCycleStatus model={model} />
@@ -550,31 +530,22 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
 }
 
 function AdminCycle({ model }: { model: AwardPortalModel }) {
-  const [schedule, setSchedule] = useState({
-    nominationsCloseAt: toDateTimeLocal(model.cycle.nominationsCloseAt),
-    nominationsOpenAt: toDateTimeLocal(model.cycle.nominationsOpenAt),
-    publishAt: toDateTimeLocal(model.cycle.publishAt),
-    title: model.cycle.title,
-    votingCloseAt: toDateTimeLocal(model.cycle.votingCloseAt),
-    votingOpenAt: toDateTimeLocal(model.cycle.votingOpenAt),
-  });
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const progress = model.progress;
+  const canOpenNominations = model.cycle.configuredStage === "Draft";
+  const canPublish = model.cycle.stage === "Certification";
 
-  function updateScheduleField(field: keyof typeof schedule, value: string) {
-    setSchedule((current) => ({ ...current, [field]: value }));
-  }
-
-  function saveSchedule() {
+  function openNominations() {
     setMessage(null);
     startTransition(async () => {
-      const result = (await updateCycleScheduleAction({
-        ...schedule,
+      const result = (await updateCycleStageAction({
         cycleId: model.cycle.id,
+        stage: "nominations",
       })) as PortalResult;
 
-      setMessage(result.ok ? "Schedule saved." : result.error ?? "Unable to save schedule.");
+      setMessage(result.ok ? "Nominations opened." : result.error ?? "Unable to open nominations.");
       if (result.ok) router.refresh();
     });
   }
@@ -598,149 +569,53 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
         </div>
         <StagePill stage={model.cycle.stage} />
       </div>
-      <div className="schedule-list">
-        <label>
-          <span>Cycle title</span>
-          <input
-            onChange={(event) => updateScheduleField("title", event.target.value)}
-            value={schedule.title}
-          />
-        </label>
-        <div className="schedule-row">
-          <span>Nominations</span>
+      <div className="progress-grid">
+        <div className="progress-tile">
+          <span>Eligible members</span>
+          <strong>{progress.eligibleMemberCount}</strong>
+        </div>
+        <div className="progress-tile">
+          <span>Nominations complete</span>
           <strong>
-            {model.cycle.nominationsOpen} to {model.cycle.nominationsClose}
+            {progress.nominationCompletionCount}/{progress.eligibleMemberCount}
           </strong>
         </div>
-        <div className="schedule-row">
-          <span>Voting</span>
+        <div className="progress-tile">
+          <span>Categories ready</span>
           <strong>
-            {model.cycle.votingOpen} to {model.cycle.votingClose}
+            {progress.approvedCategoryCount}/{progress.activeCategoryCount}
           </strong>
         </div>
-        <div className="schedule-row">
-          <span>Public results</span>
-          <strong>{model.cycle.publishedAt ? "Published" : "Not published"}</strong>
-        </div>
-        <div className="schedule-form-grid">
-          <label>
-            <span>Nominations open</span>
-            <input
-              onChange={(event) => updateScheduleField("nominationsOpenAt", event.target.value)}
-              type="datetime-local"
-              value={schedule.nominationsOpenAt}
-            />
-          </label>
-          <label>
-            <span>Nominations close</span>
-            <input
-              onChange={(event) => updateScheduleField("nominationsCloseAt", event.target.value)}
-              type="datetime-local"
-              value={schedule.nominationsCloseAt}
-            />
-          </label>
-          <label>
-            <span>Voting open</span>
-            <input
-              onChange={(event) => updateScheduleField("votingOpenAt", event.target.value)}
-              type="datetime-local"
-              value={schedule.votingOpenAt}
-            />
-          </label>
-          <label>
-            <span>Voting close</span>
-            <input
-              onChange={(event) => updateScheduleField("votingCloseAt", event.target.value)}
-              type="datetime-local"
-              value={schedule.votingCloseAt}
-            />
-          </label>
-          <label>
-            <span>Publish target</span>
-            <input
-              onChange={(event) => updateScheduleField("publishAt", event.target.value)}
-              type="datetime-local"
-              value={schedule.publishAt}
-            />
-          </label>
+        <div className="progress-tile">
+          <span>Votes submitted</span>
+          <strong>
+            {progress.voteReceiptCount}/{progress.eligibleMemberCount}
+          </strong>
         </div>
       </div>
+      <div className="progress-note">
+        <strong>Flow</strong>
+        <span>
+          Nominations stay open until every eligible member completes every active category.
+          Voting stays open until every eligible member submits one ballot.
+        </span>
+      </div>
       <div className="cycle-actions">
-        <span>Computed from schedule. Admin review and publishing stay manual.</span>
-        <button className="secondary-action" disabled={pending} onClick={saveSchedule} type="button">
-          Save schedule
-        </button>
+        <span>Review, certification, and publishing stay under admin control.</span>
+        {canOpenNominations ? (
+          <button className="secondary-action" disabled={pending} onClick={openNominations} type="button">
+            Open nominations
+          </button>
+        ) : null}
         <button
           className="primary-action"
-          disabled={pending || model.cycle.stage !== "Certification"}
+          disabled={pending || !canPublish}
           onClick={publishWinners}
           type="button"
         >
           {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
         </button>
       </div>
-      {message ? <div className="notice">{message}</div> : null}
-    </section>
-  );
-}
-
-function AdminMemberForm() {
-  const [memberForm, setMemberForm] = useState({
-    chapter: "Latewatch",
-    email: "",
-    name: "",
-    photoUrl: "",
-    status: "active" as Member["status"],
-  });
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-
-  function saveMember() {
-    setMessage(null);
-    startTransition(async () => {
-      const result = (await upsertMemberAction(memberForm)) as PortalResult;
-      setMessage(result.ok ? "Member saved." : result.error ?? "Unable to save member.");
-      if (result.ok) router.refresh();
-    });
-  }
-
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Manual add</p>
-          <h2>Member</h2>
-        </div>
-      </div>
-      <div className="form-grid">
-        <label>
-          <span>Name</span>
-          <input
-            onChange={(event) => setMemberForm((current) => ({ ...current, name: event.target.value }))}
-            value={memberForm.name}
-          />
-        </label>
-        <label>
-          <span>Email</span>
-          <input
-            onChange={(event) => setMemberForm((current) => ({ ...current, email: event.target.value }))}
-            type="email"
-            value={memberForm.email}
-          />
-        </label>
-        <label>
-          <span>Photo URL</span>
-          <input
-            onChange={(event) => setMemberForm((current) => ({ ...current, photoUrl: event.target.value }))}
-            type="url"
-            value={memberForm.photoUrl}
-          />
-        </label>
-      </div>
-      <button className="primary-action" disabled={pending || !memberForm.name || !memberForm.email} onClick={saveMember} type="button">
-        {pending ? "Saving" : "Save member"}
-      </button>
       {message ? <div className="notice">{message}</div> : null}
     </section>
   );
@@ -905,10 +780,14 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
 }
 
 function CategoryActionRow({
+  canCertify,
+  canReview,
   category,
   finalistCount,
   nominationCount,
 }: {
+  canCertify: boolean;
+  canReview: boolean;
   category: Category;
   finalistCount: number;
   nominationCount: number;
@@ -958,13 +837,18 @@ function CategoryActionRow({
         {message ? <small className="inline-message">{message}</small> : null}
       </span>
       <div className="row-actions">
-        <button className="secondary-action" disabled={pending} onClick={approveFinalists} type="button">
+        <button
+          className="secondary-action"
+          disabled={pending || !canReview}
+          onClick={approveFinalists}
+          type="button"
+        >
           Approve finalists
         </button>
         <button className="secondary-action" disabled={pending} onClick={createRunoff} type="button">
           Runoff
         </button>
-        <button className="primary-action" disabled={pending} onClick={certify} type="button">
+        <button className="primary-action" disabled={pending || !canCertify} onClick={certify} type="button">
           Certify
         </button>
       </div>
@@ -973,6 +857,9 @@ function CategoryActionRow({
 }
 
 function AdminQueues({ model }: { model: AwardPortalModel }) {
+  const canReview = model.cycle.stage === "Review";
+  const canCertify = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
+
   return (
     <section className="panel wide-panel">
       <div className="panel-head">
@@ -1002,6 +889,8 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
         <div className="mini-list">
           {model.categories.map((category) => (
             <CategoryActionRow
+              canCertify={canCertify}
+              canReview={canReview}
               category={category}
               finalistCount={
                 model.finalists.filter(
@@ -1042,10 +931,9 @@ export function AdminAwardsPage({
       </section>
       <section className="admin-grid">
         <AdminCycle model={model} />
+        <AdminQueues model={model} />
         <AdminCategoryManager model={model} />
         <AdminRoster model={model} />
-        <AdminMemberForm />
-        <AdminQueues model={model} />
       </section>
     </main>
   );

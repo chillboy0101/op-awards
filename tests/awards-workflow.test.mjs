@@ -9,6 +9,7 @@ import {
   createVoteReceipt,
   recordAnonymousVotes,
   suggestFinalists,
+  validateBallotSelections,
   validateCategorySetup,
   validateNomination,
 } from "../src/lib/awards/workflow.mjs";
@@ -161,6 +162,50 @@ describe("anonymous voting", () => {
     { id: "fin-1", categoryId: category.id, nomineeId: "mem-2", displayName: "Blair Chen" },
     { id: "fin-2", categoryId: category.id, nomineeId: "mem-4", displayName: "Devon Patel" },
   ];
+
+  it("requires one approved finalist selection for every active ballot category", () => {
+    const communityCategory = { id: "cat-community", active: true, title: "Community" };
+    const serviceCategory = { id: "cat-service", active: true, title: "Service" };
+    const approvedFinalists = [
+      { id: "fin-1", categoryId: communityCategory.id, status: "approved" },
+      { id: "fin-2", categoryId: serviceCategory.id, status: "approved" },
+    ];
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory, serviceCategory],
+        finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-1",
+        },
+      }),
+      { ok: false, reason: "INCOMPLETE_BALLOT" },
+    );
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory, serviceCategory],
+        finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-2",
+          [serviceCategory.id]: "fin-2",
+        },
+      }),
+      { ok: false, reason: "INVALID_FINALIST_SELECTION" },
+    );
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory, serviceCategory],
+        finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-1",
+          [serviceCategory.id]: "fin-2",
+        },
+      }),
+      { ok: true, categoryIds: [communityCategory.id, serviceCategory.id] },
+    );
+  });
 
   it("creates a voter receipt without linking anonymous vote choices to the member", () => {
     const receipt = createVoteReceipt({

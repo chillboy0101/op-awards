@@ -39,87 +39,157 @@ describe("member phase gating", () => {
 });
 
 describe("effective cycle stage", () => {
-  const schedule = {
-    configuredStage: "draft",
-    nominationsOpenAt: "2026-05-20T13:00:00.000Z",
-    nominationsCloseAt: "2026-06-10T23:59:59.000Z",
-    votingOpenAt: "2026-06-18T13:00:00.000Z",
-    votingCloseAt: "2026-06-28T23:59:59.000Z",
+  const completionCycle = {
+    activeCategoryCount: 3,
+    approvedCategoryCount: 0,
+    configuredStage: "nominations",
+    eligibleMemberCount: 4,
+    nominationCompletionCount: 0,
+    nominationsOpenAt: "2026-12-01T13:00:00.000Z",
     publishedAt: null,
+    voteReceiptCount: 0,
+    votingOpenAt: "2027-01-01T13:00:00.000Z",
   };
 
-  it("derives upcoming, nomination, review, voting, and certification from dates", () => {
+  it("keeps a prepared cycle in draft until an admin opens nominations", () => {
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        now: "2026-05-19T12:00:00.000Z",
+        ...completionCycle,
+        configuredStage: "draft",
+        nominationCompletionCount: 4,
+        approvedCategoryCount: 3,
+        voteReceiptCount: 4,
       }),
       "Draft",
     );
+  });
+
+  it("opens nominations from the admin start and ignores future schedule dates", () => {
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        now: "2026-05-21T12:00:00.000Z",
+        ...completionCycle,
+        now: "2026-05-19T12:00:00.000Z",
+      }),
+      "Nominations",
+    );
+  });
+
+  it("moves to review only after every eligible member completes every active category", () => {
+    assert.equal(
+      getEffectiveCycleStage({
+        ...completionCycle,
+        nominationCompletionCount: 3,
       }),
       "Nominations",
     );
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        now: "2026-06-12T12:00:00.000Z",
+        ...completionCycle,
+        nominationCompletionCount: 4,
+      }),
+      "Review",
+    );
+  });
+
+  it("opens voting only after finalists are approved for every active category", () => {
+    assert.equal(
+      getEffectiveCycleStage({
+        ...completionCycle,
+        nominationCompletionCount: 4,
+        approvedCategoryCount: 2,
       }),
       "Review",
     );
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        now: "2026-06-20T12:00:00.000Z",
+        ...completionCycle,
+        nominationCompletionCount: 4,
+        approvedCategoryCount: 3,
+      }),
+      "Voting",
+    );
+  });
+
+  it("moves to certification only after every eligible member votes", () => {
+    assert.equal(
+      getEffectiveCycleStage({
+        ...completionCycle,
+        nominationCompletionCount: 4,
+        approvedCategoryCount: 3,
+        voteReceiptCount: 3,
       }),
       "Voting",
     );
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        now: "2026-06-29T12:00:00.000Z",
+        ...completionCycle,
+        nominationCompletionCount: 4,
+        approvedCategoryCount: 3,
+        voteReceiptCount: 4,
       }),
       "Certification",
-    );
-  });
-
-  it("keeps the portal in review during voting dates until finalists are approved", () => {
-    assert.equal(
-      getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 0,
-        now: "2026-06-20T12:00:00.000Z",
-      }),
-      "Review",
     );
   });
 
   it("shows published only after an admin publish timestamp exists", () => {
+    const completeCycle = {
+      ...completionCycle,
+      approvedCategoryCount: 3,
+      configuredStage: "published",
+      nominationCompletionCount: 4,
+      voteReceiptCount: 4,
+    };
+
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
-        configuredStage: "published",
+        ...completeCycle,
         now: "2026-06-29T12:00:00.000Z",
       }),
       "Certification",
     );
     assert.equal(
       getEffectiveCycleStage({
-        ...schedule,
-        approvedFinalistCount: 4,
+        ...completeCycle,
         publishedAt: "2026-07-12T13:00:00.000Z",
         now: "2026-07-13T12:00:00.000Z",
       }),
       "Published",
+    );
+  });
+
+  it("falls back to the old finalist count only when category completion counts are absent", () => {
+    assert.equal(
+      getEffectiveCycleStage({
+        approvedFinalistCount: 2,
+        configuredStage: "nominations",
+        eligibleMemberCount: 2,
+        nominationParticipantCount: 2,
+        voteReceiptCount: 0,
+      }),
+      "Voting",
+    );
+  });
+});
+
+describe("legacy date fields", () => {
+  const schedule = {
+    activeCategoryCount: 2,
+    approvedCategoryCount: 2,
+    configuredStage: "nominations",
+    eligibleMemberCount: 2,
+    nominationCompletionCount: 2,
+    publishedAt: null,
+    voteReceiptCount: 0,
+  };
+
+  it("does not let old schedule windows close an incomplete voting phase", () => {
+    assert.equal(
+      getEffectiveCycleStage({
+        ...schedule,
+        votingCloseAt: "2026-01-01T00:00:00.000Z",
+        now: "2026-06-29T12:00:00.000Z",
+      }),
+      "Voting",
     );
   });
 });

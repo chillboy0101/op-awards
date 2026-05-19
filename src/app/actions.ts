@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -11,10 +11,12 @@ import { assertRole } from "@/lib/auth/security";
 import { syncAllowedOrganizationMembers } from "@/lib/auth/clerk-members";
 import { awardModel } from "@/lib/awards/data";
 import { getEffectiveCycleStage, getMemberPhaseAccess } from "@/lib/awards/phase";
+import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 import {
   calculateResults,
   createResultCertificationSnapshot,
   suggestFinalists,
+  validateBallotSelections,
   validateCategorySetup,
   validateNomination,
 } from "@/lib/awards/workflow.mjs";
@@ -97,26 +99,36 @@ function parseScheduleDate(value: string) {
 }
 
 function getDemoEffectiveStage() {
+  const progress = getCycleProgress({
+    categories: awardModel.categories,
+    finalists: awardModel.finalists,
+    members: awardModel.members,
+    nominations: awardModel.nominations,
+    voteReceipts: [],
+  });
+
   return getEffectiveCycleStage({
-    approvedFinalistCount: awardModel.finalists.filter((finalist) => finalist.status === "approved").length,
+    activeCategoryCount: progress.activeCategoryCount,
+    approvedCategoryCount: progress.approvedCategoryCount,
+    approvedFinalistCount: progress.approvedFinalistCount,
     configuredStage: awardModel.cycle.stage,
-    nominationsCloseAt: awardModel.cycle.nominationsCloseAt,
-    nominationsOpenAt: awardModel.cycle.nominationsOpenAt,
+    eligibleMemberCount: progress.eligibleMemberCount,
+    nominationCompletionCount: progress.nominationCompletionCount,
     publishedAt: awardModel.cycle.publishedAt,
-    votingCloseAt: awardModel.cycle.votingCloseAt,
-    votingOpenAt: awardModel.cycle.votingOpenAt,
+    voteReceiptCount: progress.voteReceiptCount,
   });
 }
 
-function getCycleEffectiveStage(cycle: CycleTiming, approvedFinalistCount = 0) {
+function getCycleEffectiveStage(cycle: CycleTiming, progress: CycleProgress) {
   return getEffectiveCycleStage({
-    approvedFinalistCount,
+    activeCategoryCount: progress.activeCategoryCount,
+    approvedCategoryCount: progress.approvedCategoryCount,
+    approvedFinalistCount: progress.approvedFinalistCount,
     configuredStage: cycle.stage,
-    nominationsCloseAt: cycle.nominationsCloseAt,
-    nominationsOpenAt: cycle.nominationsOpenAt,
+    eligibleMemberCount: progress.eligibleMemberCount,
+    nominationCompletionCount: progress.nominationCompletionCount,
     publishedAt: cycle.publishedAt,
-    votingCloseAt: cycle.votingCloseAt,
-    votingOpenAt: cycle.votingOpenAt,
+    voteReceiptCount: progress.voteReceiptCount,
   });
 }
 
@@ -128,6 +140,38 @@ async function getLatestCycle() {
     .limit(1);
 
   return cycle ?? null;
+}
+
+async function getCycleCompletionProgress(cycleId: string) {
+  const db = getDb();
+  const [members, categories, nominations, voteReceipts] = await Promise.all([
+    db.select().from(schema.members).where(eq(schema.members.status, "active")),
+    db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycleId)),
+    db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycleId)),
+    db.select().from(schema.voteReceipts).where(eq(schema.voteReceipts.cycleId, cycleId)),
+  ]);
+  const categoryIds = categories.map((category) => category.id);
+  const [finalists, certifications] = categoryIds.length
+    ? await Promise.all([
+        db
+          .select()
+          .from(schema.finalists)
+          .where(inArray(schema.finalists.categoryId, categoryIds)),
+        db
+          .select()
+          .from(schema.resultCertifications)
+          .where(inArray(schema.resultCertifications.categoryId, categoryIds)),
+      ])
+    : [[], []];
+
+  return getCycleProgress({
+    categories,
+    certifications,
+    finalists,
+    members,
+    nominations,
+    voteReceipts,
+  });
 }
 
 async function certifyCategoryResult(category: CategoryRow, user: CurrentAdminUser) {
@@ -222,7 +266,10 @@ export async function createNominationAction(input: unknown) {
     .where(eq(schema.awardCycles.id, category.cycleId))
     .limit(1);
 
-  if (!cycle || !getMemberPhaseAccess(getCycleEffectiveStage(cycle)).canNominate) {
+  if (!cycle) return { ok: false, error: "Nominations are not open." };
+
+  const progress = await getCycleCompletionProgress(cycle.id);
+  if (!getMemberPhaseAccess(getCycleEffectiveStage(cycle, progress)).canNominate) {
     return { ok: false, error: "Nominations are not open." };
   }
 
@@ -294,32 +341,33 @@ export async function submitBallotAction(input: unknown) {
   if (!cycle) return { ok: false, error: "Voting is not open." };
   if (categoryIds.length === 0) return { ok: false, error: "Select one finalist per category." };
 
-  const [cycleCategories, finalists] = await Promise.all([
+  const [cycleCategories, finalists, progress] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
     db.select().from(schema.finalists),
+    getCycleCompletionProgress(cycle.id),
   ]);
   const cycleCategoryIds = new Set(cycleCategories.map((category) => category.id));
   const approvedFinalists = finalists.filter(
     (finalist) => finalist.status === "approved" && cycleCategoryIds.has(finalist.categoryId),
   );
 
-  if (!getMemberPhaseAccess(getCycleEffectiveStage(cycle, approvedFinalists.length)).canVote) {
+  if (!getMemberPhaseAccess(getCycleEffectiveStage(cycle, progress)).canVote) {
     return { ok: false, error: "Voting is not open." };
   }
 
-  const approvedFinalistById = new Map(approvedFinalists.map((finalist) => [finalist.id, finalist]));
+  const ballotValidation = validateBallotSelections({
+    categories: cycleCategories,
+    finalists: approvedFinalists,
+    selections: parsed.data.selections,
+  });
 
-  for (const [categoryId, finalistId] of Object.entries(parsed.data.selections)) {
-    const finalist = approvedFinalistById.get(finalistId);
-
-    if (!cycleCategoryIds.has(categoryId) || finalist?.categoryId !== categoryId) {
-      return { ok: false, error: "Select one approved finalist per category." };
-    }
+  if (!ballotValidation.ok) {
+    return { ok: false, error: "Select one approved finalist per category." };
   }
 
   try {
     await db.insert(schema.voteReceipts).values({
-      categoryIds,
+      categoryIds: ballotValidation.categoryIds,
       confirmationCode,
       cycleId: parsed.data.cycleId,
       memberId: user.member.id,
@@ -435,6 +483,11 @@ export async function approveFinalistsAction(categoryId: string) {
     .limit(1);
 
   if (!category) return { ok: false, error: "Category not found." };
+
+  const progress = await getCycleCompletionProgress(category.cycleId);
+  if (progress.nominationCompletionCount < progress.eligibleMemberCount) {
+    return { ok: false, error: "Wait until every eligible member completes nominations." };
+  }
 
   const [members, nominations] = await Promise.all([
     db.select().from(schema.members).where(eq(schema.members.status, "active")),
@@ -692,13 +745,29 @@ export async function certifyResultsAction(categoryId: string) {
 
   if (!hasDatabaseUrl()) return { ok: true, demo: true };
 
-  const [category] = await getDb()
+  const db = getDb();
+  const [category] = await db
     .select()
     .from(schema.categories)
     .where(eq(schema.categories.id, categoryId))
     .limit(1);
 
   if (!category) return { ok: false, error: "Category not found." };
+
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, category.cycleId))
+    .limit(1);
+
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+
+  const progress = await getCycleCompletionProgress(cycle.id);
+  const effectiveStage = getCycleEffectiveStage(cycle, progress);
+
+  if (effectiveStage !== "Certification" && effectiveStage !== "Published") {
+    return { ok: false, error: "Certify results after every eligible member votes." };
+  }
 
   await certifyCategoryResult(category, user);
 
@@ -730,18 +799,14 @@ export async function publishWinnersAction(cycleId: string) {
 
   if (!cycle) return { ok: false, error: "Cycle not found." };
 
-  const [cycleCategories, finalists] = await Promise.all([
+  const [cycleCategories, progress] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
-    db.select().from(schema.finalists),
+    getCycleCompletionProgress(cycle.id),
   ]);
-  const cycleCategoryIds = new Set(cycleCategories.map((category) => category.id));
-  const approvedFinalistCount = finalists.filter(
-    (finalist) => finalist.status === "approved" && cycleCategoryIds.has(finalist.categoryId),
-  ).length;
-  const effectiveStage = getCycleEffectiveStage(cycle, approvedFinalistCount);
+  const effectiveStage = getCycleEffectiveStage(cycle, progress);
 
   if (effectiveStage !== "Certification" && effectiveStage !== "Published") {
-    return { ok: false, error: "Publish winners after voting closes." };
+    return { ok: false, error: "Publish winners after every eligible member votes." };
   }
 
   for (const category of cycleCategories) {

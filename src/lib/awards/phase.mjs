@@ -29,44 +29,54 @@ export function normalizeAwardStage(stage) {
 }
 
 export function getEffectiveCycleStage({
+  activeCategoryCount,
+  approvedCategoryCount,
   approvedFinalistCount = 0,
   configuredStage = "draft",
-  nominationsCloseAt,
-  nominationsOpenAt,
+  eligibleMemberCount = 0,
+  nominationCompletionCount,
+  nominationParticipantCount = 0,
   now = new Date(),
   publishedAt,
-  votingCloseAt,
-  votingOpenAt,
-}) {
+  voteReceiptCount = 0,
+} = {}) {
   const currentDate = toDate(now) ?? new Date();
   const publishedDate = toDate(publishedAt);
 
   if (publishedDate && publishedDate <= currentDate) return "Published";
 
-  const nominationsOpenDate = toDate(nominationsOpenAt);
-  const nominationsCloseDate = toDate(nominationsCloseAt);
-  const votingOpenDate = toDate(votingOpenAt);
-  const votingCloseDate = toDate(votingCloseAt);
+  const configured = normalizeAwardStage(configuredStage);
+  if (configured === "Draft") return "Draft";
 
-  if (nominationsOpenDate && currentDate < nominationsOpenDate) return "Draft";
-  if (
-    nominationsOpenDate &&
-    currentDate >= nominationsOpenDate &&
-    (!nominationsCloseDate || currentDate <= nominationsCloseDate)
-  ) {
-    return "Nominations";
-  }
-  if (votingOpenDate && currentDate < votingOpenDate) return "Review";
-  if (
-    votingOpenDate &&
-    currentDate >= votingOpenDate &&
-    (!votingCloseDate || currentDate <= votingCloseDate)
-  ) {
-    return approvedFinalistCount > 0 ? "Voting" : "Review";
-  }
-  if (votingCloseDate && currentDate > votingCloseDate) return "Certification";
+  const eligibleCount = Math.max(0, Number(eligibleMemberCount) || 0);
+  const hasCategoryCount =
+    typeof activeCategoryCount === "number" && Number.isFinite(activeCategoryCount);
+  const categoryCount = Math.max(0, Number(activeCategoryCount) || 0);
+  const completedNominators = Math.max(
+    0,
+    Number(nominationCompletionCount ?? nominationParticipantCount) || 0,
+  );
+  const nominationsComplete =
+    eligibleCount > 0 &&
+    (!hasCategoryCount || categoryCount > 0) &&
+    completedNominators >= eligibleCount;
 
-  return normalizeAwardStage(configuredStage);
+  if (!nominationsComplete) return "Nominations";
+
+  const hasApprovedCategoryCount =
+    typeof approvedCategoryCount === "number" && Number.isFinite(approvedCategoryCount);
+  const reviewedCategories = Math.max(0, Number(approvedCategoryCount) || 0);
+  const approvedFinalists = Math.max(0, Number(approvedFinalistCount) || 0);
+  const finalistsApproved = hasCategoryCount
+    ? categoryCount > 0 && hasApprovedCategoryCount && reviewedCategories >= categoryCount
+    : approvedFinalists > 0;
+
+  if (!finalistsApproved) return "Review";
+
+  const completedBallots = Math.max(0, Number(voteReceiptCount) || 0);
+  if (eligibleCount === 0 || completedBallots < eligibleCount) return "Voting";
+
+  return "Certification";
 }
 
 export function getMemberPhaseAccess(stage) {
