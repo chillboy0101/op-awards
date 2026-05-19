@@ -1,0 +1,174 @@
+function findMember(members, memberId) {
+  return members.find((member) => member.id === memberId) ?? null;
+}
+
+function activeMember(members, memberId) {
+  const member = findMember(members, memberId);
+  return member && member.status === "active" ? member : null;
+}
+
+function nominationCountForNominator(existingNominations, categoryId, nominatorId) {
+  return existingNominations.filter(
+    (nomination) =>
+      nomination.categoryId === categoryId && nomination.nominatorId === nominatorId,
+  ).length;
+}
+
+export function validateNomination({
+  members,
+  category,
+  existingNominations,
+  nominatorId,
+  nomineeId,
+}) {
+  if (!activeMember(members, nominatorId)) {
+    return { ok: false, reason: "NOMINATOR_NOT_ACTIVE_MEMBER" };
+  }
+
+  if (!activeMember(members, nomineeId)) {
+    return { ok: false, reason: "NOMINEE_NOT_ACTIVE_MEMBER" };
+  }
+
+  if (nominatorId === nomineeId) {
+    return { ok: false, reason: "SELF_NOMINATION_NOT_ALLOWED" };
+  }
+
+  const nominationLimit = category.nominationLimit ?? 1;
+  const submittedCount = nominationCountForNominator(
+    existingNominations,
+    category.id,
+    nominatorId,
+  );
+
+  if (submittedCount >= nominationLimit) {
+    return { ok: false, reason: "CATEGORY_NOMINATION_LIMIT_REACHED" };
+  }
+
+  return { ok: true };
+}
+
+export function suggestFinalists({ members, category, nominations }) {
+  const counts = new Map();
+
+  for (const nomination of nominations) {
+    if (nomination.categoryId !== category.id) continue;
+    counts.set(nomination.nomineeId, (counts.get(nomination.nomineeId) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([nomineeId, nominationCount]) => {
+      const member = findMember(members, nomineeId);
+
+      return {
+        nomineeId,
+        displayName: member?.name ?? "Unknown member",
+        nominationCount,
+        eligible: member?.status === "active",
+      };
+    })
+    .filter((suggestion) => suggestion.eligible)
+    .sort((left, right) => {
+      if (right.nominationCount !== left.nominationCount) {
+        return right.nominationCount - left.nominationCount;
+      }
+
+      return left.displayName.localeCompare(right.displayName);
+    })
+    .slice(0, category.finalistLimit ?? 5);
+}
+
+export function approveFinalists({ category, approvedById, suggestedFinalists }) {
+  return suggestedFinalists
+    .filter((suggestion) => suggestion.eligible)
+    .slice(0, category.finalistLimit ?? 5)
+    .map((suggestion, index) => ({
+      id: `${category.id}-finalist-${index + 1}`,
+      categoryId: category.id,
+      nomineeId: suggestion.nomineeId,
+      displayName: suggestion.displayName,
+      nominationCount: suggestion.nominationCount,
+      approvedById,
+      status: "approved",
+    }));
+}
+
+export function createVoteReceipt({
+  memberId,
+  cycleId,
+  categoryIds,
+  submittedAt = new Date().toISOString(),
+}) {
+  return {
+    id: `receipt-${cycleId}-${memberId}`,
+    memberId,
+    cycleId,
+    categoryIds: [...categoryIds].sort(),
+    submittedAt,
+  };
+}
+
+export function recordAnonymousVotes({ receipt, selections, finalists }) {
+  const finalistIds = new Set(finalists.map((finalist) => finalist.id));
+
+  return selections.map((selection, index) => {
+    if (!finalistIds.has(selection.finalistId)) {
+      throw new Error(`Unknown finalist selected for ${selection.categoryId}`);
+    }
+
+    return {
+      id: `vote-${receipt.cycleId}-${selection.categoryId}-${index + 1}`,
+      cycleId: receipt.cycleId,
+      categoryId: selection.categoryId,
+      finalistId: selection.finalistId,
+      submittedAt: receipt.submittedAt,
+    };
+  });
+}
+
+export function calculateResults({ category, finalists, votes }) {
+  const categoryVotes = votes.filter((vote) => vote.categoryId === category.id);
+  const totals = finalists.map((finalist) => ({
+    ...finalist,
+    voteCount: categoryVotes.filter((vote) => vote.finalistId === finalist.id).length,
+  }));
+
+  const sortedTotals = [...totals].sort((left, right) => {
+    if (right.voteCount !== left.voteCount) return right.voteCount - left.voteCount;
+    return left.displayName.localeCompare(right.displayName);
+  });
+
+  const topCount = sortedTotals[0]?.voteCount ?? 0;
+  const tiedFinalists = sortedTotals.filter((finalist) => finalist.voteCount === topCount);
+
+  if (tiedFinalists.length > 1) {
+    return {
+      categoryId: category.id,
+      status: "tie",
+      totals: sortedTotals,
+      tiedFinalists,
+      winner: null,
+    };
+  }
+
+  return {
+    categoryId: category.id,
+    status: "winner",
+    totals: sortedTotals,
+    tiedFinalists: [],
+    winner: sortedTotals[0] ?? null,
+  };
+}
+
+export function createRunoffCategory({ category, tiedFinalists, createdById }) {
+  return {
+    id: `${category.id}-runoff`,
+    parentCategoryId: category.id,
+    title: `${category.title} Runoff`,
+    kind: "runoff",
+    nominationLimit: 0,
+    finalistLimit: tiedFinalists.length,
+    eligibleFinalistIds: tiedFinalists.map((finalist) => finalist.id),
+    createdById,
+    status: "draft",
+  };
+}
