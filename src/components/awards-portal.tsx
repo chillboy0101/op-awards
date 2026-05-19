@@ -10,6 +10,7 @@ import {
   certifyResultsAction,
   createNominationsAction,
   createRunoffAction,
+  deleteCategoryAction,
   publishWinnersAction,
   submitBallotAction,
   syncClerkRosterAction,
@@ -675,33 +676,36 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const blankCategory = {
     active: true,
     categoryId: "",
-    description: "",
     finalistLimit: 3,
-    nominationLimit: 1,
-    nominationQuestion: "",
     title: "",
   };
   const [categoryForm, setCategoryForm] = useState(blankCategory);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+
+  function openNewCategory() {
+    setMessage(null);
+    setCategoryForm(blankCategory);
+    setCategoryModalOpen(true);
+  }
 
   function editCategory(category: Category) {
     setMessage(null);
     setCategoryForm({
       active: category.active,
       categoryId: category.id,
-      description: category.description,
       finalistLimit: category.finalistLimit,
-      nominationLimit: category.nominationLimit,
-      nominationQuestion: category.question,
       title: category.title,
     });
+    setCategoryModalOpen(true);
   }
 
-  function resetCategory(clearMessage = true) {
-    if (clearMessage) setMessage(null);
+  function closeCategoryModal() {
+    if (pending) return;
     setCategoryForm(blankCategory);
+    setCategoryModalOpen(false);
   }
 
   function saveCategory() {
@@ -710,9 +714,25 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
       const result = (await upsertCategoryAction(categoryForm)) as PortalResult;
       setMessage(result.ok ? "Category saved." : result.error ?? "Unable to save category.");
       if (result.ok) {
-        resetCategory(false);
+        setCategoryModalOpen(false);
+        setCategoryForm(blankCategory);
         router.refresh();
       }
+    });
+  }
+
+  function deleteCategory(category: Category) {
+    const confirmed = window.confirm(
+      `Delete ${category.title}? Existing nominations, finalists, and votes for this category will also be removed.`,
+    );
+
+    if (!confirmed) return;
+
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await deleteCategoryAction(category.id)) as PortalResult;
+      setMessage(result.ok ? "Category deleted." : result.error ?? "Unable to delete category.");
+      if (result.ok) router.refresh();
     });
   }
 
@@ -723,108 +743,118 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Categories</p>
           <h2>Voting categories</h2>
         </div>
-        <button className="secondary-action" onClick={() => resetCategory()} type="button">
+        <button className="secondary-action" onClick={openNewCategory} type="button">
           New
         </button>
       </div>
       <div className="compact-list">
         {model.categories.map((category) => (
-          <button
-            className="compact-row category-edit-row"
-            key={category.id}
-            onClick={() => editCategory(category)}
-            type="button"
-          >
+          <article className="compact-row category-edit-row" key={category.id}>
             <span>
               <strong>{category.title}</strong>
               <small>
                 {category.nominationLimit} nomination / {category.finalistLimit} finalists
               </small>
             </span>
-            <StagePill stage="Edit" />
-          </button>
+            <div className="row-actions">
+              <button
+                className="secondary-action"
+                disabled={pending}
+                onClick={() => editCategory(category)}
+                type="button"
+              >
+                Edit
+              </button>
+              <button
+                className="danger-action"
+                disabled={pending}
+                onClick={() => deleteCategory(category)}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </article>
         ))}
       </div>
-      <div className="form-grid">
-        <label>
-          <span>Title</span>
-          <input
-            onChange={(event) =>
-              setCategoryForm((current) => ({ ...current, title: event.target.value }))
-            }
-            value={categoryForm.title}
-          />
-        </label>
-        <label>
-          <span>Nomination question</span>
-          <input
-            onChange={(event) =>
-              setCategoryForm((current) => ({
-                ...current,
-                nominationQuestion: event.target.value,
-              }))
-            }
-            value={categoryForm.nominationQuestion}
-          />
-        </label>
-        <label>
-          <span>Description</span>
-          <textarea
-            onChange={(event) =>
-              setCategoryForm((current) => ({ ...current, description: event.target.value }))
-            }
-            rows={3}
-            value={categoryForm.description}
-          />
-        </label>
-        <label>
-          <span>Nominations per member</span>
-          <input
-            min={1}
-            onChange={(event) =>
-              setCategoryForm((current) => ({
-                ...current,
-                nominationLimit: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={categoryForm.nominationLimit}
-          />
-        </label>
-        <label>
-          <span>Finalists</span>
-          <input
-            min={1}
-            onChange={(event) =>
-              setCategoryForm((current) => ({
-                ...current,
-                finalistLimit: Number(event.target.value),
-              }))
-            }
-            type="number"
-            value={categoryForm.finalistLimit}
-          />
-        </label>
-        <label className="check-row">
-          <input
-            checked={categoryForm.active}
-            onChange={(event) =>
-              setCategoryForm((current) => ({ ...current, active: event.target.checked }))
-            }
-            type="checkbox"
-          />
-          <span>Active</span>
-        </label>
-      </div>
-      <button
-        className="primary-action"
-        disabled={pending || !categoryForm.title || !categoryForm.nominationQuestion}
-        onClick={saveCategory}
-        type="button"
-      >
-        {pending ? "Saving" : categoryForm.categoryId ? "Update category" : "Create category"}
-      </button>
       {message ? <div className="notice">{message}</div> : null}
+      {categoryModalOpen ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeCategoryModal();
+          }}
+          role="presentation"
+        >
+          <div
+            aria-labelledby="category-modal-title"
+            aria-modal="true"
+            className="modal-panel"
+            role="dialog"
+          >
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">Category</p>
+                <h3 id="category-modal-title">
+                  {categoryForm.categoryId ? "Edit category" : "New category"}
+                </h3>
+              </div>
+              <button className="text-button" onClick={closeCategoryModal} type="button">
+                Close
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                <span>Name</span>
+                <input
+                  autoFocus
+                  onChange={(event) =>
+                    setCategoryForm((current) => ({ ...current, title: event.target.value }))
+                  }
+                  value={categoryForm.title}
+                />
+              </label>
+              <label>
+                <span>Finalists</span>
+                <input
+                  min={1}
+                  onChange={(event) =>
+                    setCategoryForm((current) => ({
+                      ...current,
+                      finalistLimit: Number(event.target.value),
+                    }))
+                  }
+                  type="number"
+                  value={categoryForm.finalistLimit}
+                />
+              </label>
+              <label className="check-row">
+                <input
+                  checked={categoryForm.active}
+                  onChange={(event) =>
+                    setCategoryForm((current) => ({ ...current, active: event.target.checked }))
+                  }
+                  type="checkbox"
+                />
+                <span>Active</span>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-action" onClick={closeCategoryModal} type="button">
+                Cancel
+              </button>
+              <button
+                className="primary-action"
+                disabled={pending || !categoryForm.title.trim()}
+                onClick={saveCategory}
+                type="button"
+              >
+                {pending ? "Saving" : categoryForm.categoryId ? "Save changes" : "Create category"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -915,46 +945,68 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Review</p>
-          <h2>Queue and finalists</h2>
+          <h2>Nomination review</h2>
         </div>
       </div>
       <div className="admin-columns">
-        <div className="mini-list">
-          {model.nominations.map((nomination) => {
-            const nominee = model.members.find((member) => member.id === nomination.nomineeId);
-            const category = model.categories.find((item) => item.id === nomination.categoryId);
+        <div className="queue-block">
+          <div className="queue-head">
+            <h3>Submitted nominations</h3>
+            <small>{model.nominations.length} total</small>
+          </div>
+          <div className="mini-list">
+            {model.nominations.length === 0 ? (
+              <EmptyState message="No nominations submitted yet." />
+            ) : null}
+            {model.nominations.map((nomination) => {
+              const nominee = model.members.find((member) => member.id === nomination.nomineeId);
+              const nominator = model.members.find(
+                (member) => member.id === nomination.nominatorId,
+              );
+              const category = model.categories.find((item) => item.id === nomination.categoryId);
 
-            return (
-              <article className="mini-row" key={nomination.id}>
-                <PersonAvatar member={nominee} name={nominee?.name ?? "Nominee"} />
-                <span>
-                  <strong>{nominee?.name ?? "Nominee"}</strong>
-                  <small>{category?.title ?? "Category"}</small>
-                </span>
-                <StagePill stage={nomination.status} />
-              </article>
-            );
-          })}
+              return (
+                <article className="mini-row review-row" key={nomination.id}>
+                  <PersonAvatar member={nominee} name={nominee?.name ?? "Nominee"} />
+                  <span>
+                    <strong>{nominee?.name ?? "Nominee"}</strong>
+                    <small>{category?.title ?? "Category"}</small>
+                    <small>Nominated by {nominator?.name ?? "Member"}</small>
+                    {nomination.statement ? (
+                      <small className="review-note">{nomination.statement}</small>
+                    ) : null}
+                  </span>
+                  <StagePill stage={nomination.status} />
+                </article>
+              );
+            })}
+          </div>
         </div>
-        <div className="mini-list">
-          {model.categories.map((category) => (
-            <CategoryActionRow
-              canCertify={canCertify}
-              canReview={canReview}
-              category={category}
-              finalistCount={
-                model.finalists.filter(
-                  (finalist) =>
-                    finalist.categoryId === category.id && finalist.status === "approved",
-                ).length
-              }
-              key={category.id}
-              nominationCount={
-                model.nominations.filter((nomination) => nomination.categoryId === category.id)
-                  .length
-              }
-            />
-          ))}
+        <div className="queue-block">
+          <div className="queue-head">
+            <h3>Finalist decisions</h3>
+            <small>Approve after review</small>
+          </div>
+          <div className="mini-list">
+            {model.categories.map((category) => (
+              <CategoryActionRow
+                canCertify={canCertify}
+                canReview={canReview}
+                category={category}
+                finalistCount={
+                  model.finalists.filter(
+                    (finalist) =>
+                      finalist.categoryId === category.id && finalist.status === "approved",
+                  ).length
+                }
+                key={category.id}
+                nominationCount={
+                  model.nominations.filter((nomination) => nomination.categoryId === category.id)
+                    .length
+                }
+              />
+            ))}
+          </div>
         </div>
       </div>
     </section>

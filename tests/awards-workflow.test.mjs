@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   approveFinalists,
+  buildAwardCategorySetup,
   buildNominationDirectory,
   calculateResults,
   createResultCertificationSnapshot,
@@ -183,6 +184,24 @@ describe("finalist workflow", () => {
 });
 
 describe("category setup", () => {
+  it("builds hidden defaults for a simple awards category form", () => {
+    assert.deepEqual(
+      buildAwardCategorySetup({
+        active: true,
+        finalistLimit: 5,
+        title: "  Team Culture ",
+      }),
+      {
+        active: true,
+        description: "Team Culture award category.",
+        finalistLimit: 5,
+        nominationLimit: 1,
+        nominationQuestion: "Who should receive Team Culture?",
+        title: "Team Culture",
+      },
+    );
+  });
+
   it("normalizes admin category setup and rejects invalid limits", () => {
     assert.deepEqual(
       validateCategorySetup({

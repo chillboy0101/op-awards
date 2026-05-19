@@ -50,6 +50,20 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
     });
 }
 
+export function buildAwardCategorySetup(input) {
+  const title = compactText(input.title);
+  const awardTitle = title || "Award";
+
+  return {
+    active: input.active !== false,
+    description: `${awardTitle} award category.`,
+    finalistLimit: positiveInteger(input.finalistLimit, 3),
+    nominationLimit: 1,
+    nominationQuestion: `Who should receive ${awardTitle}?`,
+    title,
+  };
+}
+
 export function validateCategorySetup(input) {
   const category = {
     active: input.active !== false,

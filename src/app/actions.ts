@@ -13,6 +13,7 @@ import { awardModel } from "@/lib/awards/data";
 import { getEffectiveCycleStage, getMemberPhaseAccess } from "@/lib/awards/phase";
 import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 import {
+  buildAwardCategorySetup,
   calculateResults,
   createResultCertificationSnapshot,
   suggestFinalists,
@@ -50,10 +51,7 @@ const memberSchema = z.object({
 const categorySetupSchema = z.object({
   active: z.boolean().default(true),
   categoryId: z.string().optional(),
-  description: z.string().min(1),
   finalistLimit: z.coerce.number().int().min(1).max(20),
-  nominationLimit: z.coerce.number().int().min(1).max(10),
-  nominationQuestion: z.string().min(1),
   title: z.string().min(1),
 });
 
@@ -521,7 +519,8 @@ export async function upsertCategoryAction(input: unknown) {
 
   if (!parsed.success) return { ok: false, error: "Check the category fields." };
 
-  const validated = validateCategorySetup(parsed.data);
+  const setup = buildAwardCategorySetup(parsed.data);
+  const validated = validateCategorySetup(setup);
   if (!validated.ok) return { ok: false, error: "Check the category fields." };
   if (!hasDatabaseUrl()) return { ok: true, demo: true };
 
@@ -563,6 +562,47 @@ export async function upsertCategoryAction(input: unknown) {
     actorRole: user.role,
     target: category.title,
     summary: `Admin ${categoryId ? "updated" : "created"} award category.`,
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true };
+}
+
+export async function deleteCategoryAction(categoryId: string) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!categoryId?.trim()) return { ok: false, error: "Choose a category to delete." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const cycle = await getLatestCycle();
+  if (!cycle) return { ok: false, error: "Create an award cycle first." };
+
+  const db = getDb();
+  const [category] = await db
+    .select()
+    .from(schema.categories)
+    .where(and(eq(schema.categories.id, categoryId), eq(schema.categories.cycleId, cycle.id)))
+    .limit(1);
+
+  if (!category) return { ok: false, error: "Category not found." };
+
+  await db.delete(schema.categories).where(eq(schema.categories.id, category.id));
+
+  await db.insert(schema.auditEvents).values({
+    action: "delete_category",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: category.title,
+    summary: "Admin deleted award category.",
   });
 
   revalidateAwardPages();
