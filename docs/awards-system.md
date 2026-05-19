@@ -1,10 +1,10 @@
-# CPA Awards System
+# O&P Awards System
 
 ## Product Rules
 
-- CPA members sign in with the existing Latewatch Clerk app and must belong to the configured Clerk organization.
-- CPA Awards admin access comes from `publicMetadata.cpaAwards.role = "admin"`.
-- Members may nominate active CPA members only; self-nominations are rejected.
+- O&P members sign in with the existing Latewatch Clerk app and must belong to the configured Clerk organization.
+- O&P Awards admin access comes from `publicMetadata.cpaAwards.role = "admin"`.
+- Members may nominate active O&P members only; self-nominations are rejected.
 - Members only see the current action for the cycle: nominations during the nominations stage, voting during the voting stage, and a short status otherwise.
 - Default nomination limit is one nomination per member per category.
 - Reviewers can score nominations, flag duplicates, request more information, and recommend finalists.
@@ -18,7 +18,7 @@
 
 - Public `/`: awards information and certified winner archive only.
 - Member `/member`: Clerk-protected member work for the current phase only.
-- Admin `/admin`: Clerk org member plus CPA Awards admin metadata.
+- Admin `/admin`: Clerk org member plus O&P Awards admin metadata.
 
 ## Persistent Model
 

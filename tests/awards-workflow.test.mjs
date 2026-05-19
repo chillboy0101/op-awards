@@ -26,7 +26,7 @@ const category = {
 };
 
 describe("nomination validation", () => {
-  it("accepts one peer nomination for an active CPA member", () => {
+  it("accepts one peer nomination for an active O&P member", () => {
     const result = validateNomination({
       members,
       category,

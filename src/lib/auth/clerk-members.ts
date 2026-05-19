@@ -30,7 +30,7 @@ function fullName({
   lastName?: string | null;
 }) {
   const joined = [firstName, lastName].filter(Boolean).join(" ").trim();
-  return joined || email.split("@")[0] || "CPA member";
+  return joined || email.split("@")[0] || "O&P member";
 }
 
 function memberFromRow(row: MemberRow): CurrentUser["member"] {

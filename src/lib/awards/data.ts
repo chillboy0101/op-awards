@@ -59,7 +59,7 @@ export type AuditEvent = {
 export const awardModel = {
   cycle: {
     id: "cycle-2026",
-    title: "2026 CPA Excellence Awards",
+    title: "2026 O&P Excellence Awards",
     stage: "Voting" as AwardStage,
     nominationsOpen: "May 20",
     nominationsClose: "June 10",
@@ -121,7 +121,7 @@ export const awardModel = {
     {
       id: "cat-leadership",
       title: "Leadership Excellence",
-      description: "Recognizes a member whose leadership improved the CPA community.",
+      description: "Recognizes a member whose leadership improved the O&P community.",
       finalistLimit: 3,
       nominationLimit: 1,
       question: "What leadership action created measurable value for members?",

@@ -10,7 +10,7 @@ const serverEnvSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().optional(),
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   DATABASE_URL: z.string().url().optional(),
-  EMAIL_FROM: z.string().default("CPA Awards <awards@example.com>"),
+  EMAIL_FROM: z.string().default("O&P Awards <awards@example.com>"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().default("/sign-in"),
   NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string().default("/sign-up"),

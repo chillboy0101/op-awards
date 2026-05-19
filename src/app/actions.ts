@@ -97,7 +97,7 @@ export async function submitBallotAction(input: unknown) {
 
   if (!parsed.success) return { ok: false, error: "Select one finalist per category." };
 
-  const confirmationCode = `CPA-${nanoid(10).toUpperCase()}`;
+  const confirmationCode = `OP-${nanoid(10).toUpperCase()}`;
 
   if (!hasDatabaseUrl()) {
     if (!getMemberPhaseAccess(awardModel.cycle.stage).canVote) {

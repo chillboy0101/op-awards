@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CPA Awards",
-  description: "A secure nomination and anonymous voting system for CPA awards.",
+  title: "O&P AWARDS",
+  description: "A secure nomination and anonymous voting system for O&P awards.",
 };
 
 export default function RootLayout({

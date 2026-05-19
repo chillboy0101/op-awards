@@ -51,7 +51,7 @@ function initials(name: string) {
 function Mark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      CPA
+      O&P
     </span>
   );
 }
@@ -80,14 +80,14 @@ function Header({
 }) {
   return (
     <header className="topbar">
-      <Link className="brand" href="/" aria-label="CPA Awards home">
+      <Link className="brand" href="/" aria-label="O&P Awards home">
         <Mark />
         <span>
-          <strong>CPA Awards</strong>
+          <strong>O&P AWARDS</strong>
           <small>{active === "public" ? "Live" : currentUser?.member.name ?? "Member"}</small>
         </span>
       </Link>
-      <nav className="nav-links" aria-label="CPA Awards navigation">
+      <nav className="nav-links" aria-label="O&P Awards navigation">
         <Link className={active === "public" ? "is-active" : ""} href="/">
           Public
         </Link>
@@ -383,7 +383,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       })) as PortalResult;
 
       if (result.ok) {
-        setReceipt(result.confirmationCode ?? "CPA-RECORDED");
+        setReceipt(result.confirmationCode ?? "OP-RECORDED");
       } else {
         setMessage(result.error ?? "Unable to submit ballot.");
       }

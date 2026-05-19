@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to seed CPA Awards.");
+  throw new Error("DATABASE_URL is required to seed O&P Awards.");
 }
 
 const sql = neon(databaseUrl);
@@ -76,7 +76,7 @@ await sql`
   )
   values (
     ${ids.cycle},
-    '2026 CPA Excellence Awards',
+    '2026 O&P Excellence Awards',
     'voting',
     '2026-05-20T13:00:00Z',
     '2026-06-10T23:59:59Z',
@@ -111,7 +111,7 @@ await sql`
       ${ids.leadership},
       ${ids.cycle},
       'Leadership Excellence',
-      'Recognizes a member whose leadership improved the CPA community.',
+      'Recognizes a member whose leadership improved the O&P community.',
       'What leadership action created measurable value for members?',
       1,
       3,
@@ -221,7 +221,7 @@ await sql`
 await sql`
   insert into audit_events (id, actor_member_id, actor_role, action, target, summary, metadata)
   values
-    (${ids.auditVoting}, ${ids.ari}, 'admin', 'opened_voting', '2026 cycle', 'Voting opened for active CPA members.', '{"stage":"voting"}'::jsonb),
+    (${ids.auditVoting}, ${ids.ari}, 'admin', 'opened_voting', '2026 cycle', 'Voting opened for active O&P members.', '{"stage":"voting"}'::jsonb),
     (${ids.auditDuplicate}, ${ids.blair}, 'reviewer', 'resolved_duplicate', 'Practice Innovation', 'Reviewer resolved a possible duplicate nomination.', '{"duplicateRisk":"resolved"}'::jsonb),
     (${ids.auditFinalists}, ${ids.ari}, 'admin', 'approved_finalists', 'Leadership Excellence', 'Finalist slate approved for voting.', '{"finalists":2}'::jsonb)
   on conflict (id) do update set
@@ -231,4 +231,4 @@ await sql`
     metadata = excluded.metadata
 `;
 
-console.log("Seeded CPA Awards baseline data.");
+console.log("Seeded O&P Awards baseline data.");

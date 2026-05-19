@@ -7,8 +7,8 @@ import {
   isCpaAwardsAdmin,
 } from "../src/lib/auth/clerk-access.mjs";
 
-describe("Clerk CPA Awards access", () => {
-  it("reads only the namespaced CPA Awards public metadata role", () => {
+describe("Clerk O&P Awards access", () => {
+  it("reads only the namespaced O&P Awards public metadata role", () => {
     assert.equal(
       getCpaAwardsRole({
         cpaAwards: { role: "admin" },

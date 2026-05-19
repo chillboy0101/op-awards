@@ -8,7 +8,7 @@ export default function SignInPage() {
     return (
       <main className="auth-shell">
         <div className="auth-panel">
-          <p className="section-label">CPA Awards</p>
+          <p className="section-label">O&P AWARDS</p>
           <h1>Clerk is not connected yet.</h1>
           <p>Add the Clerk environment variables for the existing Latewatch app.</p>
           <Link className="secondary-action" href="/">

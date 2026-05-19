@@ -34,8 +34,8 @@ export async function sendMagicLinkEmail({
   return getResend().emails.send({
     from: env.EMAIL_FROM,
     to: email,
-    subject: "Your CPA Awards sign-in link",
-    text: `Use this secure link to sign in to CPA Awards: ${magicLinkUrl}`,
+    subject: "Your O&P Awards sign-in link",
+    text: `Use this secure link to sign in to O&P Awards: ${magicLinkUrl}`,
   });
 }
 
@@ -55,7 +55,7 @@ export async function sendVoteReceiptEmail({
   return getResend().emails.send({
     from: env.EMAIL_FROM,
     to: email,
-    subject: "CPA Awards ballot receipt",
-    text: `Your CPA Awards ballot was received. Receipt: ${confirmationCode}. Your selections are stored anonymously.`,
+    subject: "O&P Awards ballot receipt",
+    text: `Your O&P Awards ballot was received. Receipt: ${confirmationCode}. Your selections are stored anonymously.`,
   });
 }

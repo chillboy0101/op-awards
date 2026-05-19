@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: "If that email is an active CPA member, a sign-in link has been sent.",
+    message: "If that email is an active O&P member, a sign-in link has been sent.",
     devMagicLink: result.devMagicLink,
     demo: result.demo,
   });

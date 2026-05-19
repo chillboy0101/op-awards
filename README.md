@@ -1,6 +1,6 @@
-# CPA Awards
+# O&P Awards
 
-A production-oriented nomination and anonymous voting system for CPA member awards.
+A production-oriented nomination and anonymous voting system for O&P member awards.
 
 ## Run Locally
 
@@ -33,7 +33,7 @@ npm run build
 - Clerk-protected `/member` for existing Latewatch organization users.
 - Phase-gated member work: nominations show only during nominations, ballots show only during voting.
 - `/admin` for users with `publicMetadata.cpaAwards.role = "admin"`.
-- Clerk roster sync into CPA Awards member records through `clerk_user_id`.
+- Clerk roster sync into O&P Awards member records through `clerk_user_id`.
 - Member nomination with searchable tap-to-select people cards and profile photos.
 - Anonymous ballot flow with finalist cards and vote receipts.
 - Admin command center for cycle stage, roster sync, manual member add, runoff creation, certification, email, and audit events.
@@ -43,7 +43,7 @@ npm run build
 
 ## Clerk Setup
 
-CPA Awards uses the existing Latewatch Clerk app and organization. Add these env vars locally and in Vercel:
+O&P Awards uses the existing Latewatch Clerk app and organization. Add these env vars locally and in Vercel:
 
 ```bash
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
