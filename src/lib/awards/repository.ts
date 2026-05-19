@@ -11,19 +11,27 @@ import {
   type Member,
   type Nomination,
 } from "@/lib/awards/data";
+import { getEffectiveCycleStage } from "@/lib/awards/phase";
 
 export type AwardPortalModel = {
   audit: AuditEvent[];
   categories: Category[];
   cycle: {
+    configuredStage: AwardStage;
     id: string;
     nominationsClose: string;
+    nominationsCloseAt: string | null;
     nominationsOpen: string;
+    nominationsOpenAt: string | null;
+    publishAt: string | null;
     publishDate: string;
+    publishedAt: string | null;
     stage: AwardStage;
     title: string;
     votingClose: string;
+    votingCloseAt: string | null;
     votingOpen: string;
+    votingOpenAt: string | null;
   };
   finalists: Finalist[];
   members: Member[];
@@ -60,6 +68,14 @@ function shortDate(date: Date | null) {
   }).format(date);
 }
 
+function dateToIso(date?: Date | string | null) {
+  if (!date) return null;
+
+  if (typeof date === "string") return date;
+
+  return date.toISOString();
+}
+
 function nominationStatus(status: string): Nomination["status"] {
   if (status === "needs_info") return "needs-info";
   if (status === "approved" || status === "recommended" || status === "new") return status;
@@ -67,10 +83,33 @@ function nominationStatus(status: string): Nomination["status"] {
   return "needs-info";
 }
 
+function getFallbackPortalData(): AwardPortalModel {
+  const approvedFinalistCount = awardModel.finalists.filter(
+    (finalist) => finalist.status === "approved",
+  ).length;
+
+  return {
+    ...awardModel,
+    cycle: {
+      ...awardModel.cycle,
+      configuredStage: awardModel.cycle.stage,
+      stage: getEffectiveCycleStage({
+        approvedFinalistCount,
+        configuredStage: awardModel.cycle.stage,
+        nominationsCloseAt: awardModel.cycle.nominationsCloseAt,
+        nominationsOpenAt: awardModel.cycle.nominationsOpenAt,
+        publishedAt: awardModel.cycle.publishedAt,
+        votingCloseAt: awardModel.cycle.votingCloseAt,
+        votingOpenAt: awardModel.cycle.votingOpenAt,
+      }) as AwardStage,
+    },
+  };
+}
+
 export async function getPortalData(
   options: { includeClerkRoster?: boolean } = {},
 ): Promise<AwardPortalModel> {
-  if (!hasDatabaseUrl()) return awardModel;
+  if (!hasDatabaseUrl()) return getFallbackPortalData();
 
   if (options.includeClerkRoster) {
     await syncAllowedOrganizationMembers();
@@ -83,7 +122,7 @@ export async function getPortalData(
     .orderBy(desc(schema.awardCycles.createdAt))
     .limit(1);
 
-  if (!cycle) return awardModel;
+  if (!cycle) return getFallbackPortalData();
 
   const [members, categories, nominations, finalists, votes, certifications, audit] =
     await Promise.all([
@@ -140,6 +179,16 @@ export async function getPortalData(
       }),
     );
   const finalistById = new Map(finalistList.map((finalist) => [finalist.id, finalist]));
+  const configuredStage = toStage(cycle.stage);
+  const effectiveStage = getEffectiveCycleStage({
+    approvedFinalistCount: finalistList.filter((finalist) => finalist.status === "approved").length,
+    configuredStage,
+    nominationsCloseAt: cycle.nominationsCloseAt,
+    nominationsOpenAt: cycle.nominationsOpenAt,
+    publishedAt: cycle.publishedAt,
+    votingCloseAt: cycle.votingCloseAt,
+    votingOpenAt: cycle.votingOpenAt,
+  }) as AwardStage;
 
   const results = categoryList.map((category) => {
     const categoryVotes = votes.filter((vote) => vote.categoryId === category.id);
@@ -183,14 +232,21 @@ export async function getPortalData(
     ),
     categories: categoryList,
     cycle: {
+      configuredStage,
       id: cycle.id,
       nominationsClose: shortDate(cycle.nominationsCloseAt),
+      nominationsCloseAt: dateToIso(cycle.nominationsCloseAt),
       nominationsOpen: shortDate(cycle.nominationsOpenAt),
+      nominationsOpenAt: dateToIso(cycle.nominationsOpenAt),
+      publishAt: dateToIso(cycle.publishAt),
       publishDate: shortDate(cycle.publishAt),
-      stage: toStage(cycle.stage),
+      publishedAt: dateToIso(cycle.publishedAt),
+      stage: effectiveStage,
       title: cycle.title,
       votingClose: shortDate(cycle.votingCloseAt),
+      votingCloseAt: dateToIso(cycle.votingCloseAt),
       votingOpen: shortDate(cycle.votingOpenAt),
+      votingOpenAt: dateToIso(cycle.votingOpenAt),
     },
     finalists: finalistList,
     members: memberList,

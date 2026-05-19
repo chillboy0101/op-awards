@@ -145,6 +145,9 @@ a {
 
 .nav-links a,
 .text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 36px;
   border: 0;
   border-radius: 6px;
@@ -198,7 +201,6 @@ a {
   gap: 12px;
 }
 
-.date-grid,
 .admin-grid,
 .admin-columns,
 .finalist-grid,
@@ -210,17 +212,12 @@ a {
 .ballot-list,
 .form-grid,
 .directory-block,
+.schedule-list,
 .work-panel {
   display: grid;
   gap: 12px;
 }
 
-.date-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-bottom: 18px;
-}
-
-.date-grid span,
 .panel,
 .empty-state {
   border: 1px solid var(--line);
@@ -229,16 +226,18 @@ a {
   box-shadow: 0 10px 24px rgba(30, 41, 59, 0.045);
 }
 
-.date-grid span {
-  min-height: 86px;
-  padding: 16px;
+.status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px 16px;
   color: var(--muted);
-}
-
-.date-grid strong {
-  display: block;
-  color: var(--foreground);
-  font-size: 1.2rem;
+  box-shadow: 0 10px 24px rgba(30, 41, 59, 0.045);
 }
 
 .panel {
@@ -325,12 +324,31 @@ a {
 
 .profile-pill {
   gap: 10px;
+  max-width: 100%;
   min-height: 50px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
   padding: 5px 12px 5px 5px;
   font-weight: 720;
+}
+
+.profile-pill > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-signout {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 760;
 }
 
 .avatar {
@@ -390,6 +408,7 @@ textarea:focus {
 .finalist-card,
 .compact-row,
 .mini-row,
+.schedule-row,
 .result-row {
   min-width: 0;
   border: 1px solid var(--line);
@@ -485,13 +504,15 @@ textarea:focus {
 
 .result-row,
 .compact-row,
-.mini-row {
+.mini-row,
+.schedule-row {
   justify-content: space-between;
   min-height: 58px;
   padding: 12px;
 }
 
-.result-row {
+.result-row,
+.schedule-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -511,6 +532,24 @@ textarea:focus {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
+}
+
+.schedule-row {
+  background: #fbfcfd;
+}
+
+.schedule-row span,
+.cycle-actions span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.cycle-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
 }
 
 .admin-columns {
@@ -568,8 +607,16 @@ textarea:focus {
     align-items: stretch;
   }
 
+  .topbar {
+    flex-direction: column;
+  }
+
   .nav-links {
-    overflow-x: auto;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    overflow-x: visible;
+    width: 100%;
   }
 
   .hero-panel,
@@ -581,12 +628,17 @@ textarea:focus {
     justify-items: stretch;
   }
 
-  .date-grid,
   .admin-grid,
   .admin-columns,
   .people-list,
   .finalist-grid,
   .chip-row {
     grid-template-columns: 1fr;
+  }
+
+  .status-strip,
+  .cycle-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

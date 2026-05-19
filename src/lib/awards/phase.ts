@@ -1,5 +1,10 @@
-import { getMemberPhaseAccess, normalizeAwardStage } from "./phase.mjs";
+import {
+  getEffectiveCycleStage,
+  getMemberPhaseAccess,
+  normalizeAwardStage,
+} from "./phase.mjs";
 
-export { getMemberPhaseAccess, normalizeAwardStage };
+export { getEffectiveCycleStage, getMemberPhaseAccess, normalizeAwardStage };
 
+export type EffectiveCycleStageOptions = Parameters<typeof getEffectiveCycleStage>[0];
 export type MemberPhaseAccess = ReturnType<typeof getMemberPhaseAccess>;

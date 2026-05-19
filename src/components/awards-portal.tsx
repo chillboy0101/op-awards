@@ -8,9 +8,9 @@ import {
   certifyResultsAction,
   createNominationAction,
   createRunoffAction,
+  publishWinnersAction,
   submitBallotAction,
   syncClerkRosterAction,
-  updateCycleStageAction,
   upsertMemberAction,
 } from "@/app/actions";
 import { getMemberPhaseAccess } from "@/lib/awards/phase";
@@ -28,15 +28,6 @@ type PortalResult = {
 };
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
-const stageOptions = [
-  { label: "Draft", value: "draft" },
-  { label: "Nominations", value: "nominations" },
-  { label: "Review", value: "review" },
-  { label: "Voting", value: "voting" },
-  { label: "Certification", value: "certification" },
-  { label: "Published", value: "published" },
-] as const;
 
 function initials(name: string) {
   return name
@@ -71,6 +62,22 @@ function PersonAvatar({ member, name }: { member?: Pick<Member, "name" | "photoU
   );
 }
 
+function ProfilePill({ currentUser }: { currentUser: CurrentUser }) {
+  return (
+    <div className="profile-pill">
+      <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
+      <span>{currentUser.member.name}</span>
+      {clerkEnabled ? (
+        <SignOutButton>
+          <button className="profile-signout" type="button">
+            Sign out
+          </button>
+        </SignOutButton>
+      ) : null}
+    </div>
+  );
+}
+
 function Header({
   active,
   currentUser,
@@ -92,25 +99,12 @@ function Header({
           Public
         </Link>
         <Link className={active === "member" ? "is-active" : ""} href="/member">
-          Member
+          Awards Portal
         </Link>
-        {active === "admin" || currentUser?.role === "admin" ? (
+        {active === "admin" ? (
           <Link className={active === "admin" ? "is-active" : ""} href="/admin">
             Admin
           </Link>
-        ) : null}
-        {clerkEnabled ? (
-          currentUser ? (
-            <SignOutButton>
-              <button className="text-button" type="button">
-                Sign out
-              </button>
-            </SignOutButton>
-          ) : (
-            <Link className="text-button" href="/sign-in">
-              Sign in
-            </Link>
-          )
         ) : null}
       </nav>
     </header>
@@ -135,7 +129,7 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Results</p>
           <h2>{published ? "Winners" : "Pending"}</h2>
         </div>
-        <StagePill stage={published ? "Published" : model.cycle.publishDate} />
+        <StagePill stage={published ? "Published" : "Pending"} />
       </div>
       <div className="result-list">
         {model.results.map((result) => (
@@ -145,6 +139,27 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function getStageAction(stage: string) {
+  const access = getMemberPhaseAccess(stage);
+
+  if (access.canNominate) return "Members can nominate now.";
+  if (access.canVote) return "Members can vote now.";
+  if (access.label === "Published") return "Winners are live.";
+  if (access.label === "Review") return "Review is in progress.";
+  if (access.label === "Certification") return "Results are being certified.";
+
+  return "The next cycle is being prepared.";
+}
+
+function PublicCycleStatus({ model }: { model: AwardPortalModel }) {
+  return (
+    <section className="status-strip" aria-label="Current awards status">
+      <StagePill stage={model.cycle.stage} />
+      <span>{getStageAction(model.cycle.stage)}</span>
     </section>
   );
 }
@@ -161,24 +176,11 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
         <div className="hero-side">
           <StagePill stage={model.cycle.stage} />
           <Link className="primary-action" href="/member">
-            Member access
+            Awards Portal
           </Link>
         </div>
       </section>
-      <section className="date-grid" aria-label="Key dates">
-        <span>
-          <strong>{model.cycle.nominationsOpen}</strong>
-          Nominations
-        </span>
-        <span>
-          <strong>{model.cycle.votingOpen}</strong>
-          Voting
-        </span>
-        <span>
-          <strong>{model.cycle.publishDate}</strong>
-          Results
-        </span>
-      </section>
+      <PublicCycleStatus model={model} />
       <PublicWinners model={model} />
     </main>
   );
@@ -368,7 +370,9 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     [model.members],
   );
   const categoriesWithFinalists = model.categories.filter((category) =>
-    model.finalists.some((finalist) => finalist.categoryId === category.id),
+    model.finalists.some(
+      (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
+    ),
   );
   const ready =
     categoriesWithFinalists.length > 0 &&
@@ -401,7 +405,9 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       </div>
       <div className="ballot-list">
         {categoriesWithFinalists.map((category) => {
-          const finalists = model.finalists.filter((finalist) => finalist.categoryId === category.id);
+          const finalists = model.finalists.filter(
+            (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
+          );
 
           return (
             <section className="ballot-category" key={category.id}>
@@ -451,14 +457,11 @@ export function MemberAwardsPage({
       <Header active="member" currentUser={currentUser} />
       <section className="member-hero">
         <div>
-          <p className="eyebrow">Member portal</p>
+          <p className="eyebrow">Awards Portal</p>
           <h1>{access.label}</h1>
           <p>{access.message}</p>
         </div>
-        <div className="profile-pill">
-          <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
-          <span>{currentUser.member.name}</span>
-        </div>
+        <ProfilePill currentUser={currentUser} />
       </section>
       {access.canNominate ? <NominationExperience currentUser={currentUser} model={model} /> : null}
       {access.canVote ? <VotingExperience model={model} /> : null}
@@ -512,21 +515,15 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
 }
 
 function AdminCycle({ model }: { model: AwardPortalModel }) {
-  const initialStage =
-    stageOptions.find((stage) => stage.label === model.cycle.stage)?.value ?? "draft";
-  const [stage, setStage] = useState<(typeof stageOptions)[number]["value"]>(initialStage);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function saveStage() {
+  function publishWinners() {
     setMessage(null);
     startTransition(async () => {
-      const result = (await updateCycleStageAction({
-        cycleId: model.cycle.id,
-        stage,
-      })) as PortalResult;
+      const result = (await publishWinnersAction(model.cycle.id)) as PortalResult;
 
-      setMessage(result.ok ? "Stage saved." : result.error ?? "Unable to save stage.");
+      setMessage(result.ok ? "Winners published." : result.error ?? "Unable to publish winners.");
     });
   }
 
@@ -539,16 +536,33 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
         </div>
         <StagePill stage={model.cycle.stage} />
       </div>
-      <div className="stage-control">
-        <select onChange={(event) => setStage(event.target.value as typeof stage)} value={stage}>
-          {stageOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <button className="primary-action" disabled={pending} onClick={saveStage} type="button">
-          Save stage
+      <div className="schedule-list">
+        <div className="schedule-row">
+          <span>Nominations</span>
+          <strong>
+            {model.cycle.nominationsOpen} to {model.cycle.nominationsClose}
+          </strong>
+        </div>
+        <div className="schedule-row">
+          <span>Voting</span>
+          <strong>
+            {model.cycle.votingOpen} to {model.cycle.votingClose}
+          </strong>
+        </div>
+        <div className="schedule-row">
+          <span>Public results</span>
+          <strong>{model.cycle.publishedAt ? "Published" : "Not published"}</strong>
+        </div>
+      </div>
+      <div className="cycle-actions">
+        <span>Computed from schedule. Admin review and publishing stay manual.</span>
+        <button
+          className="primary-action"
+          disabled={pending || model.cycle.stage !== "Certification"}
+          onClick={publishWinners}
+          type="button"
+        >
+          {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
         </button>
       </div>
       {message ? <div className="notice">{message}</div> : null}
@@ -630,7 +644,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Review</p>
-          <h2>Nominations and results</h2>
+          <h2>Queue and finalists</h2>
         </div>
       </div>
       <div className="admin-columns">
@@ -690,10 +704,7 @@ export function AdminAwardsPage({
           <h1>Control room</h1>
           <p>Cycle, roster, finalists, results.</p>
         </div>
-        <div className="profile-pill">
-          <PersonAvatar member={currentUser.member} name={currentUser.member.name} />
-          <span>{currentUser.member.name}</span>
-        </div>
+        <ProfilePill currentUser={currentUser} />
       </section>
       <section className="admin-grid">
         <AdminCycle model={model} />
