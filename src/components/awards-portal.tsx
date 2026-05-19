@@ -87,19 +87,13 @@ function ProfilePill({ currentUser }: { currentUser: CurrentUser }) {
 
 function Header({
   active,
-  currentUser,
 }: {
   active: "admin" | "member" | "public";
-  currentUser?: CurrentUser | null;
 }) {
   return (
     <header className="topbar">
       <Link className="brand" href="/" aria-label="O&P Awards home">
         <Mark />
-        <span>
-          <strong>O&P AWARDS</strong>
-          <small>{active === "public" ? "Live" : currentUser?.member.name ?? "Member"}</small>
-        </span>
       </Link>
       <nav className="nav-links" aria-label="O&P Awards navigation">
         <Link className={active === "public" ? "is-active" : ""} href="/">
@@ -281,7 +275,6 @@ function MemberDirectory({
             <PersonAvatar member={member} name={member.name} />
             <span>
               <strong>{member.name}</strong>
-              <small>{member.chapter}</small>
             </span>
             {member.isSelf ? <span className="self-badge">You</span> : null}
           </button>
@@ -306,7 +299,6 @@ function NominationExperience({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const selectedQuestion = model.categories.find((category) => category.id === selectedCategory)?.question;
   const selectedDraft = nominationDrafts[selectedCategory] ?? { nomineeId: "", statement: "" };
   const completedCategoryIds = new Set(
     activeCategories
@@ -374,7 +366,6 @@ function NominationExperience({
         <span>Reason (optional)</span>
         <textarea
           onChange={(event) => updateDraft(selectedCategory, { statement: event.target.value })}
-          placeholder={selectedQuestion ? `Optional: ${selectedQuestion}` : "Optional note"}
           rows={4}
           value={selectedDraft.statement}
         />
@@ -518,7 +509,7 @@ export function MemberAwardsPage({
 
   return (
     <main className="app-shell">
-      <Header active="member" currentUser={currentUser} />
+      <Header active="member" />
       <section className="member-hero">
         <div>
           <p className="eyebrow">Awards Portal</p>
@@ -799,8 +790,13 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
                   {categoryForm.categoryId ? "Edit category" : "New category"}
                 </h3>
               </div>
-              <button className="text-button" onClick={closeCategoryModal} type="button">
-                Close
+              <button
+                aria-label="Close category modal"
+                className="modal-close"
+                onClick={closeCategoryModal}
+                type="button"
+              >
+                X
               </button>
             </div>
             <div className="form-grid">
@@ -923,7 +919,7 @@ function CategoryActionRow({
           onClick={approveFinalists}
           type="button"
         >
-          Approve finalists
+          Approve top nominees
         </button>
         <button className="secondary-action" disabled={pending} onClick={createRunoff} type="button">
           Runoff
@@ -1022,7 +1018,7 @@ export function AdminAwardsPage({
 }) {
   return (
     <main className="app-shell">
-      <Header active="admin" currentUser={currentUser} />
+      <Header active="admin" />
       <section className="member-hero">
         <div>
           <p className="eyebrow">Admin</p>

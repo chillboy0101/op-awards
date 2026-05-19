@@ -99,7 +99,7 @@ a {
 
 .brand {
   gap: 10px;
-  min-width: 190px;
+  min-width: 40px;
 }
 
 .brand-mark {
@@ -811,6 +811,19 @@ textarea:focus {
   margin: 3px 0 0;
   font-size: 1.14rem;
   letter-spacing: 0;
+}
+
+.modal-close {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 820;
 }
 
 .modal-actions {
