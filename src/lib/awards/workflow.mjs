@@ -23,6 +23,33 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
+export function buildNominationDirectory({ currentMemberId, members, query = "" }) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return members
+    .filter((member) => member.status === "active")
+    .filter((member) => {
+      if (!normalizedQuery) return true;
+
+      return `${member.name} ${member.email} ${member.chapter ?? ""}`
+        .toLowerCase()
+        .includes(normalizedQuery);
+    })
+    .map((member) => {
+      const isSelf = member.id === currentMemberId;
+
+      return {
+        ...member,
+        isSelf,
+        selectable: !isSelf,
+      };
+    })
+    .sort((left, right) => {
+      if (left.isSelf !== right.isSelf) return left.isSelf ? -1 : 1;
+      return left.name.localeCompare(right.name);
+    });
+}
+
 export function validateCategorySetup(input) {
   const category = {
     active: input.active !== false,

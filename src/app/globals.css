@@ -491,6 +491,26 @@ textarea:focus {
   min-height: 74px;
 }
 
+.person-card.is-self {
+  opacity: 1;
+  background: #f3f6f8;
+}
+
+.person-card.is-self:hover {
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.self-badge {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
 .finalist-card {
   min-height: 78px;
 }

@@ -17,11 +17,13 @@ import {
   upsertCategoryAction,
 } from "@/app/actions";
 import { getMemberPhaseAccess } from "@/lib/awards/phase";
+import { buildNominationDirectory } from "@/lib/awards/workflow.mjs";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
 import type { AwardPortalModel } from "@/lib/awards/repository";
 import type { CurrentUser } from "@/lib/auth/service";
 
 type VoteSelections = Record<string, string>;
+type DirectoryMember = Member & { isSelf: boolean; selectable: boolean };
 type PortalResult = {
   count?: number;
   demo?: boolean;
@@ -233,11 +235,11 @@ function MemberDirectory({
   setSelectedNominee: (memberId: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const filteredMembers = members
-    .filter((member) => member.status === "active" && member.id !== currentMemberId)
-    .filter((member) =>
-      `${member.name} ${member.email} ${member.chapter}`.toLowerCase().includes(query.toLowerCase()),
-    );
+  const filteredMembers = buildNominationDirectory({
+    currentMemberId,
+    members,
+    query,
+  }) as DirectoryMember[];
 
   return (
     <div className="directory-block">
@@ -251,7 +253,17 @@ function MemberDirectory({
       <div className="people-list">
         {filteredMembers.map((member) => (
           <button
-            className={selectedNominee === member.id ? "person-card is-selected" : "person-card"}
+            aria-label={
+              member.isSelf ? `${member.name}, you cannot nominate yourself` : member.name
+            }
+            className={[
+              "person-card",
+              selectedNominee === member.id ? "is-selected" : "",
+              member.isSelf ? "is-self" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            disabled={!member.selectable}
             key={member.id}
             onClick={() => setSelectedNominee(member.id)}
             type="button"
@@ -261,6 +273,7 @@ function MemberDirectory({
               <strong>{member.name}</strong>
               <small>{member.chapter}</small>
             </span>
+            {member.isSelf ? <span className="self-badge">You</span> : null}
           </button>
         ))}
       </div>

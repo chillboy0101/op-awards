@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   approveFinalists,
+  buildNominationDirectory,
   calculateResults,
   createResultCertificationSnapshot,
   createRunoffCategory,
@@ -81,6 +82,24 @@ describe("nomination validation", () => {
       }).reason,
       "CATEGORY_NOMINATION_LIMIT_REACHED",
     );
+  });
+});
+
+describe("nomination directory", () => {
+  it("keeps the signed-in member visible but marks them as self", () => {
+    const directory = buildNominationDirectory({
+      currentMemberId: "mem-1",
+      members,
+      query: "ari",
+    });
+
+    assert.deepEqual(directory, [
+      {
+        ...members[0],
+        isSelf: true,
+        selectable: false,
+      },
+    ]);
   });
 });
 
