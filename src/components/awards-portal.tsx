@@ -178,7 +178,7 @@ function getStageAction(stage: string) {
 function PublicCycleStatus({ model }: { model: AwardPortalModel }) {
   return (
     <section className="status-strip" aria-label="Current awards status">
-      <StagePill stage={model.cycle.stage} />
+      <span className="status-label">Current cycle</span>
       <span>{getStageAction(model.cycle.stage)}</span>
     </section>
   );
@@ -190,7 +190,6 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
       <Header active="public" />
       <section className="hero-panel">
         <div>
-          <p className="eyebrow">Current cycle</p>
           <h1>{model.cycle.title}</h1>
         </div>
       </section>
@@ -567,7 +566,6 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
               <strong>{member.name}</strong>
               <small>{member.email}</small>
             </span>
-            <StagePill stage={member.status} />
           </div>
         ))}
       </div>
