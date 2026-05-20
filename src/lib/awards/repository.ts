@@ -13,10 +13,12 @@ import {
 } from "@/lib/awards/data";
 import { getEffectiveCycleStage } from "@/lib/awards/phase";
 import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
+import { getUnresolvedTieCategoryIds } from "@/lib/awards/workflow.mjs";
 
 export type AwardPortalModel = {
   audit: AuditEvent[];
   categories: Category[];
+  currentBallotScope: string;
   cycle: {
     configuredStage: AwardStage;
     id: string;
@@ -35,10 +37,22 @@ export type AwardPortalModel = {
     votingOpenAt: string | null;
   };
   finalists: Finalist[];
+  finalistReview: {
+    category: Category;
+    finalists: Finalist[];
+  }[];
+  hasUnresolvedTies: boolean;
   members: Member[];
   nominations: Nomination[];
   phases: typeof awardModel.phases;
   progress: CycleProgress;
+  privateResults: {
+    category: string;
+    count: number;
+    leader: string;
+    status: string;
+    totals?: { displayName: string; finalistId: string; voteCount: number }[];
+  }[];
   results: {
     category: string;
     count: number;
@@ -96,6 +110,7 @@ function getFallbackPortalData(): AwardPortalModel {
 
   return {
     ...awardModel,
+    currentBallotScope: "main",
     cycle: {
       ...awardModel.cycle,
       configuredStage: awardModel.cycle.stage,
@@ -110,6 +125,9 @@ function getFallbackPortalData(): AwardPortalModel {
         voteReceiptCount: progress.voteReceiptCount,
       }) as AwardStage,
     },
+    finalistReview: [],
+    hasUnresolvedTies: false,
+    privateResults: awardModel.results,
     progress,
   };
 }
@@ -170,10 +188,13 @@ export async function getPortalData(
   const categoryList = categories.map(
     (category): Category => ({
       active: category.active,
+      ballotScope: category.ballotScope,
       description: category.description,
       finalistLimit: category.finalistLimit,
       id: category.id,
+      kind: category.kind,
       nominationLimit: category.nominationLimit,
+      parentCategoryId: category.parentCategoryId,
       question: category.nominationQuestion,
       title: category.title,
     }),
@@ -184,6 +205,7 @@ export async function getPortalData(
     .filter((finalist) => categoryById.has(finalist.categoryId))
     .map(
       (finalist): Finalist => ({
+        ballotScope: categoryById.get(finalist.categoryId)?.ballotScope ?? "main",
         categoryId: finalist.categoryId,
         displayName: finalist.displayName,
         id: finalist.id,
@@ -195,7 +217,9 @@ export async function getPortalData(
       }),
     );
   const finalistById = new Map(finalistList.map((finalist) => [finalist.id, finalist]));
-  const progress = getCycleProgress({
+  const configuredStage = toStage(cycle.stage);
+  const mainProgress = getCycleProgress({
+    ballotScope: "main",
     categories: categoryList,
     certifications,
     finalists: finalistList,
@@ -203,33 +227,68 @@ export async function getPortalData(
     nominations,
     voteReceipts,
   });
-  const configuredStage = toStage(cycle.stage);
-  const effectiveStage = getEffectiveCycleStage({
-    activeCategoryCount: progress.activeCategoryCount,
-    approvedCategoryCount: progress.approvedCategoryCount,
-    approvedFinalistCount: progress.approvedFinalistCount,
+  let currentBallotScope = "main";
+  let progress = mainProgress;
+  let effectiveStage = getEffectiveCycleStage({
+    activeCategoryCount: mainProgress.activeCategoryCount,
+    approvedCategoryCount: mainProgress.approvedCategoryCount,
+    approvedFinalistCount: mainProgress.approvedFinalistCount,
     configuredStage,
-    eligibleMemberCount: progress.eligibleMemberCount,
-    nominationCompletionCount: progress.nominationCompletionCount,
+    eligibleMemberCount: mainProgress.eligibleMemberCount,
+    nominationCompletionCount: mainProgress.nominationCompletionCount,
     publishedAt: cycle.publishedAt,
-    voteReceiptCount: progress.voteReceiptCount,
+    voteReceiptCount: mainProgress.voteReceiptCount,
   }) as AwardStage;
 
-  const results = categoryList.map((category) => {
-    const categoryVotes = votes.filter((vote) => vote.categoryId === category.id);
-    const counts = new Map<string, number>();
+  if (effectiveStage === "Certification" && !cycle.publishedAt) {
+    const activeRunoff = categoryList.find((category) => {
+      if (!category.active || category.kind !== "runoff") return false;
 
-    for (const vote of categoryVotes) {
-      counts.set(vote.finalistId, (counts.get(vote.finalistId) ?? 0) + 1);
+      const certification = certifications.find((item) => item.categoryId === category.id);
+      return !certification?.winnerFinalistId;
+    });
+
+    if (activeRunoff) {
+      currentBallotScope = activeRunoff.ballotScope;
+      progress = getCycleProgress({
+        ballotScope: currentBallotScope,
+        categories: categoryList,
+        certifications,
+        finalists: finalistList,
+        members: memberList,
+        nominations,
+        voteReceipts,
+      });
+      effectiveStage =
+        progress.voteReceiptCount >= progress.eligibleMemberCount && progress.eligibleMemberCount > 0
+          ? "Certification"
+          : "Voting";
     }
+  }
 
-    const sorted = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  function resultForCategory(category: Category) {
+    const categoryFinalists = finalistList.filter((finalist) => finalist.categoryId === category.id);
+    const categoryVotes = votes.filter(
+      (vote) => vote.categoryId === category.id && (vote.ballotScope ?? "main") === category.ballotScope,
+    );
+    const totals = categoryFinalists
+      .map((finalist) => ({
+        displayName: finalist.displayName,
+        finalistId: finalist.id,
+        voteCount: categoryVotes.filter((vote) => vote.finalistId === finalist.id).length,
+      }))
+      .sort((left, right) => {
+        if (right.voteCount !== left.voteCount) return right.voteCount - left.voteCount;
+        return left.displayName.localeCompare(right.displayName);
+      });
     const certification = certifications.find((item) => item.categoryId === category.id);
     const snapshot = certification?.tallySnapshot as
       | { count?: number; leader?: string; status?: string }
       | undefined;
-    const topCount = sorted[0]?.[1] ?? snapshot?.count ?? 0;
-    const topIds = sorted.filter(([, count]) => count === topCount).map(([id]) => id);
+    const topCount = totals[0]?.voteCount ?? snapshot?.count ?? 0;
+    const topIds = totals
+      .filter((total) => topCount > 0 && total.voteCount === topCount)
+      .map((total) => total.finalistId);
     const winner =
       (certification?.winnerFinalistId &&
         finalistById.get(certification.winnerFinalistId)?.displayName) ||
@@ -241,9 +300,75 @@ export async function getPortalData(
       category: category.title,
       count: topCount,
       leader: winner,
-      status: snapshot?.status ?? (topIds.length > 1 && topCount > 0 ? "tie-check" : "ready"),
+      status:
+        snapshot?.status ??
+        (topIds.length > 1 && topCount > 0 ? "tie-check" : topCount > 0 ? "ready" : "pending"),
+      totals,
     };
-  });
+  }
+
+  const privateResultEntries = categoryList
+    .filter((category) => category.active)
+    .map((category) => [category.id, resultForCategory(category)] as const);
+  const privateResults = privateResultEntries.map(([, result]) => result);
+  const privateResultByCategory = new Map(privateResultEntries);
+  const unresolvedTieIds = new Set(
+    getUnresolvedTieCategoryIds({
+      categories: categoryList,
+      certifications,
+    }),
+  );
+
+  for (const category of categoryList) {
+    if (category.kind === "runoff") continue;
+
+    const result = privateResultByCategory.get(category.id);
+    const hasCalculatedTie = result?.status === "tie-check";
+    const hasResolvedRunoff = categoryList
+      .filter((candidate) => candidate.kind === "runoff" && candidate.parentCategoryId === category.id)
+      .some((runoffCategory) => {
+        const certification = certifications.find((item) => item.categoryId === runoffCategory.id);
+        return Boolean(certification?.winnerFinalistId);
+      });
+
+    if (hasCalculatedTie && !hasResolvedRunoff) unresolvedTieIds.add(category.id);
+  }
+
+  const results = categoryList
+    .filter((category) => category.kind !== "runoff")
+    .map((category) => {
+      const baseResult = resultForCategory(category);
+      const resolvedRunoff = categoryList
+        .filter((candidate) => candidate.kind === "runoff" && candidate.parentCategoryId === category.id)
+        .map((runoffCategory) => ({
+          category: runoffCategory,
+          certification: certifications.find((item) => item.categoryId === runoffCategory.id),
+          result: resultForCategory(runoffCategory),
+        }))
+        .find((item) => item.certification?.winnerFinalistId);
+
+      if (!resolvedRunoff) {
+        return {
+          category: baseResult.category,
+          count: baseResult.count,
+          leader: baseResult.leader,
+          status: baseResult.status,
+        };
+      }
+
+      return {
+        category: baseResult.category,
+        count: resolvedRunoff.result.count,
+        leader: resolvedRunoff.result.leader,
+        status: "ready",
+      };
+    });
+  const finalistReview = categoryList
+    .filter((category) => category.active && category.kind !== "runoff" && category.ballotScope === "main")
+    .map((category) => ({
+      category,
+      finalists: finalistList.filter((finalist) => finalist.categoryId === category.id),
+    }));
 
   return {
     audit: audit.map(
@@ -256,6 +381,7 @@ export async function getPortalData(
       }),
     ),
     categories: categoryList,
+    currentBallotScope,
     cycle: {
       configuredStage,
       id: cycle.id,
@@ -273,7 +399,9 @@ export async function getPortalData(
       votingOpen: shortDate(cycle.votingOpenAt),
       votingOpenAt: dateToIso(cycle.votingOpenAt),
     },
+    finalistReview,
     finalists: finalistList,
+    hasUnresolvedTies: unresolvedTieIds.size > 0,
     members: memberList,
     nominations: nominations.map(
       (nomination): Nomination => ({
@@ -289,6 +417,7 @@ export async function getPortalData(
       }),
     ),
     phases: awardModel.phases,
+    privateResults,
     progress,
     results,
   };

@@ -18,7 +18,10 @@ export type Member = {
 
 export type Category = {
   active: boolean;
+  ballotScope: string;
   id: string;
+  kind?: string;
+  parentCategoryId?: string | null;
   title: string;
   description: string;
   finalistLimit: number;
@@ -40,6 +43,7 @@ export type Nomination = {
 
 export type Finalist = {
   id: string;
+  ballotScope?: string;
   categoryId: string;
   nomineeId: string;
   displayName: string;
@@ -127,7 +131,9 @@ export const awardModel = {
   categories: [
     {
       active: true,
+      ballotScope: "main",
       id: "cat-leadership",
+      kind: "standard",
       title: "Leadership Excellence",
       description: "Recognizes a member whose leadership improved the O&P community.",
       finalistLimit: 3,
@@ -136,7 +142,9 @@ export const awardModel = {
     },
     {
       active: true,
+      ballotScope: "main",
       id: "cat-service",
+      kind: "standard",
       title: "Member Service",
       description: "Honors a member who gave exceptional service to peers.",
       finalistLimit: 3,
@@ -145,7 +153,9 @@ export const awardModel = {
     },
     {
       active: true,
+      ballotScope: "main",
       id: "cat-innovation",
+      kind: "standard",
       title: "Practice Innovation",
       description: "Celebrates a member who modernized practice, process, or education.",
       finalistLimit: 3,
@@ -203,6 +213,7 @@ export const awardModel = {
   finalists: [
     {
       id: "fin-1",
+      ballotScope: "main",
       categoryId: "cat-leadership",
       nomineeId: "mem-2",
       displayName: "Blair Chen",
@@ -211,6 +222,7 @@ export const awardModel = {
     },
     {
       id: "fin-2",
+      ballotScope: "main",
       categoryId: "cat-leadership",
       nomineeId: "mem-4",
       displayName: "Devon Patel",
@@ -219,6 +231,7 @@ export const awardModel = {
     },
     {
       id: "fin-3",
+      ballotScope: "main",
       categoryId: "cat-service",
       nomineeId: "mem-3",
       displayName: "Casey Rivera",
@@ -227,6 +240,7 @@ export const awardModel = {
     },
     {
       id: "fin-4",
+      ballotScope: "main",
       categoryId: "cat-innovation",
       nomineeId: "mem-1",
       displayName: "Ari Morgan",

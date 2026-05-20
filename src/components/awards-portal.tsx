@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
 import {
-  approveFinalistsAction,
+  approveAllFinalistsAction,
   certifyResultsAction,
   createNominationsAction,
   createRunoffAction,
@@ -429,6 +429,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
   );
   const categoriesWithFinalists = model.categories.filter((category) =>
     category.active &&
+    category.ballotScope === model.currentBallotScope &&
     model.finalists.some(
       (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
     ),
@@ -441,6 +442,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     setMessage(null);
     startTransition(async () => {
       const result = (await submitBallotAction({
+        ballotScope: model.currentBallotScope,
         cycleId: model.cycle.id,
         selections,
       })) as PortalResult;
@@ -458,7 +460,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Ballot</p>
-          <h2>Tap one finalist</h2>
+          <h2>{model.currentBallotScope === "main" ? "Tap one finalist" : "Runoff ballot"}</h2>
         </div>
         <StagePill stage="Open" />
       </div>
@@ -580,7 +582,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
   const router = useRouter();
   const progress = model.progress;
   const canOpenNominations = model.cycle.configuredStage === "Draft";
-  const canPublish = model.cycle.stage === "Certification";
+  const canPublish = model.cycle.stage === "Certification" && !model.hasUnresolvedTies;
 
   function openNominations() {
     setMessage(null);
@@ -647,6 +649,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
       </div>
       <div className="cycle-actions">
         <span>Review, certification, and publishing stay under admin control.</span>
+        {model.hasUnresolvedTies ? <span>Resolve tied categories with a runoff.</span> : null}
         {canOpenNominations ? (
           <button className="secondary-action" disabled={pending} onClick={openNominations} type="button">
             Open nominations
@@ -860,13 +863,13 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
 
 function CategoryActionRow({
   canCertify,
-  canReview,
+  canRunoff,
   category,
   finalistCount,
   nominationCount,
 }: {
   canCertify: boolean;
-  canReview: boolean;
+  canRunoff: boolean;
   category: Category;
   finalistCount: number;
   nominationCount: number;
@@ -874,19 +877,6 @@ function CategoryActionRow({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-
-  function approveFinalists() {
-    setMessage(null);
-    startTransition(async () => {
-      const result = (await approveFinalistsAction(category.id)) as PortalResult;
-      setMessage(
-        result.ok
-          ? `Approved ${result.count ?? 0} finalists.`
-          : result.error ?? "Unable to approve finalists.",
-      );
-      if (result.ok) router.refresh();
-    });
-  }
 
   function createRunoff() {
     setMessage(null);
@@ -916,15 +906,7 @@ function CategoryActionRow({
         {message ? <small className="inline-message">{message}</small> : null}
       </span>
       <div className="row-actions">
-        <button
-          className="secondary-action"
-          disabled={pending || !canReview}
-          onClick={approveFinalists}
-          type="button"
-        >
-          Approve top nominees
-        </button>
-        <button className="secondary-action" disabled={pending} onClick={createRunoff} type="button">
+        <button className="secondary-action" disabled={pending || !canRunoff} onClick={createRunoff} type="button">
           Runoff
         </button>
         <button className="primary-action" disabled={pending || !canCertify} onClick={certify} type="button">
@@ -938,6 +920,27 @@ function CategoryActionRow({
 function AdminQueues({ model }: { model: AwardPortalModel }) {
   const canReview = model.cycle.stage === "Review";
   const canCertify = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const draftFinalistCount = model.finalistReview.reduce(
+    (total, group) =>
+      total + group.finalists.filter((finalist) => finalist.status === "draft").length,
+    0,
+  );
+
+  function approveAllFinalists() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await approveAllFinalistsAction(model.cycle.id)) as PortalResult;
+      setMessage(
+        result.ok
+          ? `Approved ${result.count ?? 0} finalists.`
+          : result.error ?? "Unable to approve finalists.",
+      );
+      if (result.ok) router.refresh();
+    });
+  }
 
   return (
     <section className="panel wide-panel">
@@ -946,7 +949,16 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Review</p>
           <h2>Nomination review</h2>
         </div>
+        <button
+          className="primary-action"
+          disabled={pending || !canReview}
+          onClick={approveAllFinalists}
+          type="button"
+        >
+          {pending ? "Approving" : "Approve all finalists"}
+        </button>
       </div>
+      {message ? <div className="notice">{message}</div> : null}
       <div className="admin-columns">
         <div className="queue-block">
           <div className="queue-head">
@@ -983,29 +995,93 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
         </div>
         <div className="queue-block">
           <div className="queue-head">
-            <h3>Finalist decisions</h3>
-            <small>Approve after review</small>
+            <h3>Draft finalists</h3>
+            <small>{draftFinalistCount} awaiting approval</small>
           </div>
           <div className="mini-list">
-            {model.categories.map((category) => (
-              <CategoryActionRow
-                canCertify={canCertify}
-                canReview={canReview}
-                category={category}
-                finalistCount={
-                  model.finalists.filter(
-                    (finalist) =>
-                      finalist.categoryId === category.id && finalist.status === "approved",
-                  ).length
-                }
-                key={category.id}
-                nominationCount={
-                  model.nominations.filter((nomination) => nomination.categoryId === category.id)
-                    .length
-                }
-              />
+            {model.finalistReview.length === 0 ? (
+              <EmptyState message="Finalists will appear after nominations complete." />
+            ) : null}
+            {model.finalistReview.map((group) => (
+              <article className="mini-row review-row" key={group.category.id}>
+                <span>
+                  <strong>{group.category.title}</strong>
+                  <small>
+                    {group.finalists.length
+                      ? group.finalists
+                          .map(
+                            (finalist) =>
+                              `${finalist.displayName} (${finalist.nominationCount})`,
+                          )
+                          .join(", ")
+                      : "No finalists prepared yet"}
+                  </small>
+                </span>
+                <StagePill
+                  stage={
+                    group.finalists.some((finalist) => finalist.status === "draft")
+                      ? "Draft"
+                      : "Approved"
+                  }
+                />
+              </article>
             ))}
           </div>
+        </div>
+      </div>
+      <div className="queue-block result-admin-block">
+        <div className="queue-head">
+          <h3>Private results</h3>
+          <small>{model.hasUnresolvedTies ? "Runoff required" : "Visible to admin only"}</small>
+        </div>
+        <div className="mini-list">
+          {model.privateResults.map((result) => (
+            <article className="mini-row result-review-row" key={result.category}>
+              <span>
+                <strong>{result.category}</strong>
+                <small>
+                  {result.status === "tie-check" || result.status === "tie"
+                    ? "Tie"
+                    : result.leader}{" "}
+                  / {result.count} votes
+                </small>
+              </span>
+              <StagePill stage={result.status} />
+            </article>
+          ))}
+        </div>
+      </div>
+      <div className="queue-block result-admin-block">
+        <div className="queue-head">
+          <h3>Certification</h3>
+          <small>Runoff or certify after voting</small>
+        </div>
+        <div className="mini-list">
+          {model.categories.map((category) => (
+            <CategoryActionRow
+              canCertify={canCertify}
+              canRunoff={
+                canCertify &&
+                category.kind !== "runoff" &&
+                ["tie", "tie-check"].includes(
+                  model.privateResults.find((result) => result.category === category.title)
+                    ?.status ?? "",
+                )
+              }
+              category={category}
+              finalistCount={
+                model.finalists.filter(
+                  (finalist) =>
+                    finalist.categoryId === category.id && finalist.status === "approved",
+                ).length
+              }
+              key={category.id}
+              nominationCount={
+                model.nominations.filter((nomination) => nomination.categoryId === category.id)
+                  .length
+              }
+            />
+          ))}
         </div>
       </div>
     </section>

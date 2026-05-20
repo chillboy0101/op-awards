@@ -7,6 +7,7 @@ function countUnique(values) {
 }
 
 export function getCycleProgress({
+  ballotScope = "main",
   categories = [],
   certifications = [],
   finalists = [],
@@ -15,7 +16,9 @@ export function getCycleProgress({
   voteReceipts = [],
 } = {}) {
   const activeMembers = activeItems(members);
-  const activeCategories = activeItems(categories);
+  const activeCategories = activeItems(categories).filter(
+    (category) => (category.ballotScope ?? "main") === ballotScope,
+  );
   const activeMemberIds = new Set(activeMembers.map((member) => member.id));
   const activeCategoryIds = new Set(activeCategories.map((category) => category.id));
   const nominationsByMember = new Map();
@@ -53,7 +56,11 @@ export function getCycleProgress({
   );
   const voteReceiptCount = countUnique(
     voteReceipts
-      .filter((receipt) => activeMemberIds.has(receipt.memberId))
+      .filter(
+        (receipt) =>
+          activeMemberIds.has(receipt.memberId) &&
+          (receipt.ballotScope ?? "main") === ballotScope,
+      )
       .map((receipt) => receipt.memberId),
   );
 

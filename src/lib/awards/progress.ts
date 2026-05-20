@@ -4,6 +4,7 @@ const getCycleProgressRuntime = getCycleProgressMjs as (input?: unknown) => unkn
 
 type ProgressCategory = {
   active?: boolean;
+  ballotScope?: string;
   id: string;
   status?: string;
 };
@@ -30,10 +31,12 @@ type ProgressNomination = {
 };
 
 type ProgressVoteReceipt = {
+  ballotScope?: string;
   memberId: string;
 };
 
 export type CycleProgressInput = {
+  ballotScope?: string;
   categories?: ProgressCategory[];
   certifications?: ProgressCertification[];
   finalists?: ProgressFinalist[];

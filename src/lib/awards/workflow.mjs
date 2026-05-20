@@ -127,7 +127,12 @@ export function validateNominationBatch({
   nominations,
   nominatorId,
 }) {
-  const activeCategories = categories.filter((category) => category.active !== false);
+  const activeCategories = categories.filter(
+    (category) =>
+      category.active !== false &&
+      (category.kind ?? "standard") !== "runoff" &&
+      (category.ballotScope ?? "main") === "main",
+  );
   const nominationByCategory = new Map();
 
   for (const nomination of nominations) {
@@ -199,6 +204,25 @@ export function suggestFinalists({ members, category, nominations }) {
     .slice(0, category.finalistLimit ?? 5);
 }
 
+export function buildDraftFinalists({ categories, members, nominations }) {
+  return categories
+    .filter((category) => category.active !== false && (category.kind ?? "standard") !== "runoff")
+    .flatMap((category) =>
+      suggestFinalists({ category, members, nominations }).map((suggestion, index) => ({
+        id: `${category.id}-draft-${index + 1}`,
+        ballotScope: category.ballotScope ?? "main",
+        categoryId: category.id,
+        displayName: suggestion.displayName,
+        nomineeId: suggestion.nomineeId,
+        nominationCount: suggestion.nominationCount,
+        status: "draft",
+        summary: `${suggestion.nominationCount} nomination${
+          suggestion.nominationCount === 1 ? "" : "s"
+        } received.`,
+      })),
+    );
+}
+
 export function approveFinalists({ category, approvedById, suggestedFinalists }) {
   return suggestedFinalists
     .filter((suggestion) => suggestion.eligible)
@@ -215,13 +239,15 @@ export function approveFinalists({ category, approvedById, suggestedFinalists })
 }
 
 export function createVoteReceipt({
+  ballotScope = "main",
   memberId,
   cycleId,
   categoryIds,
   submittedAt = new Date().toISOString(),
 }) {
   return {
-    id: `receipt-${cycleId}-${memberId}`,
+    id: `receipt-${cycleId}-${ballotScope}-${memberId}`,
+    ballotScope,
     memberId,
     cycleId,
     categoryIds: [...categoryIds].sort(),
@@ -274,6 +300,7 @@ export function recordAnonymousVotes({ receipt, selections, finalists }) {
 
     return {
       id: `vote-${receipt.cycleId}-${selection.categoryId}-${index + 1}`,
+      ballotScope: receipt.ballotScope ?? "main",
       cycleId: receipt.cycleId,
       categoryId: selection.categoryId,
       finalistId: selection.finalistId,
@@ -365,16 +392,64 @@ export function createResultCertificationSnapshot({ category, result }) {
   };
 }
 
-export function createRunoffCategory({ category, tiedFinalists, createdById }) {
+export function createRunoffCategory({
+  category,
+  tiedFinalists,
+  createdById,
+  runoffCategoryId = `${category.id}-runoff`,
+}) {
+  const ballotScope = `runoff-${runoffCategoryId}`;
+
   return {
-    id: `${category.id}-runoff`,
-    parentCategoryId: category.id,
-    title: `${category.title} Runoff`,
-    kind: "runoff",
-    nominationLimit: 0,
-    finalistLimit: tiedFinalists.length,
-    eligibleFinalistIds: tiedFinalists.map((finalist) => finalist.id),
-    createdById,
-    status: "draft",
+    category: {
+      id: runoffCategoryId,
+      active: true,
+      ballotScope,
+      createdById,
+      finalistLimit: tiedFinalists.length,
+      kind: "runoff",
+      nominationLimit: 0,
+      parentCategoryId: category.id,
+      title: `${category.title} Runoff`,
+    },
+    finalists: tiedFinalists.map((finalist, index) => ({
+      id: `${runoffCategoryId}-finalist-${index + 1}`,
+      ballotScope,
+      categoryId: runoffCategoryId,
+      displayName: finalist.displayName,
+      nomineeId: finalist.nomineeId ?? finalist.id,
+      nominationCount: finalist.nominationCount ?? finalist.voteCount ?? 0,
+      sourceFinalistId: finalist.id,
+      status: "approved",
+      summary: "Runoff finalist.",
+    })),
   };
+}
+
+export function getUnresolvedTieCategoryIds({ categories, certifications }) {
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const certificationsByCategory = new Map(
+    certifications.map((certification) => [certification.categoryId, certification]),
+  );
+
+  return certifications
+    .filter((certification) => ["tie", "runoff"].includes(certification.status))
+    .filter((certification) => {
+      const category = categoryById.get(certification.categoryId);
+      if (!category || (category.kind ?? "standard") === "runoff") return false;
+
+      const resolvedRunoff = categories
+        .filter(
+          (candidate) =>
+            (candidate.kind ?? "standard") === "runoff" &&
+            candidate.parentCategoryId === category.id,
+        )
+        .some((runoffCategory) => {
+          const runoffCertification = certificationsByCategory.get(runoffCategory.id);
+          return Boolean(runoffCertification?.winnerFinalistId);
+        });
+
+      return !resolvedRunoff;
+    })
+    .map((certification) => certification.categoryId);
 }

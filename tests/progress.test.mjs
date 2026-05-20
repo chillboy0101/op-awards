@@ -37,16 +37,18 @@ describe("cycle completion progress", () => {
 
   it("counts approved finalist categories and active member vote receipts", () => {
     const progress = getCycleProgress({
+      ballotScope: "main",
       categories,
       finalists: [
-        { categoryId: "cat-1", status: "approved" },
-        { categoryId: "cat-2", status: "draft" },
-        { categoryId: "cat-3", status: "approved" },
+        { categoryId: "cat-1", status: "approved", ballotScope: "main" },
+        { categoryId: "cat-2", status: "draft", ballotScope: "main" },
+        { categoryId: "cat-3", status: "approved", ballotScope: "main" },
       ],
       members,
       voteReceipts: [
-        { memberId: "mem-1" },
-        { memberId: "mem-3" },
+        { memberId: "mem-1", ballotScope: "main" },
+        { memberId: "mem-2", ballotScope: "runoff-cat-1" },
+        { memberId: "mem-3", ballotScope: "main" },
       ],
     });
 
@@ -54,5 +56,29 @@ describe("cycle completion progress", () => {
     assert.equal(progress.approvedFinalistCount, 1);
     assert.equal(progress.voteReceiptCount, 1);
     assert.equal(progress.votingRequiredCount, 2);
+  });
+
+  it("counts only categories and receipts in the requested ballot scope", () => {
+    const progress = getCycleProgress({
+      ballotScope: "runoff-cat-1",
+      categories: [
+        { id: "cat-1", active: true, ballotScope: "main" },
+        { id: "cat-1-runoff", active: true, ballotScope: "runoff-cat-1" },
+      ],
+      finalists: [
+        { categoryId: "cat-1", status: "approved", ballotScope: "main" },
+        { categoryId: "cat-1-runoff", status: "approved", ballotScope: "runoff-cat-1" },
+      ],
+      members,
+      voteReceipts: [
+        { memberId: "mem-1", ballotScope: "main" },
+        { memberId: "mem-1", ballotScope: "runoff-cat-1" },
+        { memberId: "mem-2", ballotScope: "runoff-cat-1" },
+      ],
+    });
+
+    assert.equal(progress.activeCategoryCount, 1);
+    assert.equal(progress.approvedCategoryCount, 1);
+    assert.equal(progress.voteReceiptCount, 2);
   });
 });

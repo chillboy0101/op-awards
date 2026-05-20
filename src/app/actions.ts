@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
@@ -13,9 +14,12 @@ import { awardModel } from "@/lib/awards/data";
 import { getEffectiveCycleStage, getMemberPhaseAccess } from "@/lib/awards/phase";
 import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 import {
+  buildDraftFinalists,
   buildAwardCategorySetup,
   calculateResults,
+  createRunoffCategory,
   createResultCertificationSnapshot,
+  getUnresolvedTieCategoryIds,
   suggestFinalists,
   validateBallotSelections,
   validateCategorySetup,
@@ -36,6 +40,7 @@ const nominationBatchSchema = z.object({
 });
 
 const ballotSchema = z.object({
+  ballotScope: z.string().min(1).optional().default("main"),
   cycleId: z.string().min(1),
   selections: z.record(z.string(), z.string()),
 });
@@ -81,6 +86,30 @@ type CycleTiming = {
 
 type CategoryRow = typeof schema.categories.$inferSelect;
 type CurrentAdminUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+type DraftFinalist = {
+  categoryId: string;
+  displayName: string;
+  nominationCount: number;
+  nomineeId: string;
+  status: "draft";
+  summary: string;
+};
+type RunoffSetup = {
+  category: {
+    ballotScope: string;
+    finalistLimit: number;
+    id: string;
+    title: string;
+  };
+  finalists: Array<{
+    categoryId: string;
+    displayName: string;
+    nominationCount: number;
+    nomineeId: string;
+    status: "approved";
+    summary: string;
+  }>;
+};
 type ValidatedCategorySetup = {
   active: boolean;
   description: string;
@@ -145,7 +174,7 @@ async function getLatestCycle() {
   return cycle ?? null;
 }
 
-async function getCycleCompletionProgress(cycleId: string) {
+async function getCycleCompletionProgress(cycleId: string, ballotScope = "main") {
   const db = getDb();
   const [members, categories, nominations, voteReceipts] = await Promise.all([
     db.select().from(schema.members).where(eq(schema.members.status, "active")),
@@ -168,6 +197,7 @@ async function getCycleCompletionProgress(cycleId: string) {
     : [[], []];
 
   return getCycleProgress({
+    ballotScope,
     categories,
     certifications,
     finalists,
@@ -175,6 +205,84 @@ async function getCycleCompletionProgress(cycleId: string) {
     nominations,
     voteReceipts,
   });
+}
+
+function stageForBallotScope(cycle: CycleTiming, progress: CycleProgress, ballotScope: string) {
+  if (ballotScope === "main") return getCycleEffectiveStage(cycle, progress);
+
+  if (progress.voteReceiptCount >= progress.eligibleMemberCount && progress.eligibleMemberCount > 0) {
+    return "Certification";
+  }
+
+  return "Voting";
+}
+
+export async function prepareDraftFinalistsForCycle(cycleId: string) {
+  if (!hasDatabaseUrl()) return { ok: true, demo: true, count: 0 };
+
+  const db = getDb();
+  const [members, categories, nominations, finalists, voteRows] = await Promise.all([
+    db.select().from(schema.members).where(eq(schema.members.status, "active")),
+    db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycleId)),
+    db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycleId)),
+    db.select().from(schema.finalists),
+    db.select().from(schema.anonymousVotes).where(eq(schema.anonymousVotes.cycleId, cycleId)),
+  ]);
+  const mainCategories = categories.filter(
+    (category) =>
+      category.active &&
+      category.ballotScope === "main" &&
+      category.kind !== "runoff",
+  );
+  const progress = getCycleProgress({
+    ballotScope: "main",
+    categories: mainCategories,
+    finalists,
+    members,
+    nominations,
+    voteReceipts: [],
+  });
+
+  if (
+    progress.eligibleMemberCount === 0 ||
+    progress.nominationCompletionCount < progress.eligibleMemberCount
+  ) {
+    return { ok: false, error: "Nominations are not complete.", count: 0 };
+  }
+
+  const drafts = buildDraftFinalists({
+    categories: mainCategories,
+    members,
+    nominations,
+  }) as DraftFinalist[];
+  let count = 0;
+
+  for (const category of mainCategories) {
+    const categoryHasVotes = voteRows.some((vote) => vote.categoryId === category.id);
+    const categoryHasApprovedFinalists = finalists.some(
+      (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
+    );
+
+    if (categoryHasVotes || categoryHasApprovedFinalists) continue;
+
+    const categoryDrafts = drafts.filter((draft) => draft.categoryId === category.id);
+    if (categoryDrafts.length === 0) continue;
+
+    await db.delete(schema.finalists).where(eq(schema.finalists.categoryId, category.id));
+    await db.insert(schema.finalists).values(
+      categoryDrafts.map((draft) => ({
+        categoryId: draft.categoryId,
+        displayName: draft.displayName,
+        nominationCount: draft.nominationCount,
+        nomineeId: draft.nomineeId,
+        status: "draft" as const,
+        summary: draft.summary,
+      })),
+    );
+    count += categoryDrafts.length;
+  }
+
+  return { ok: true, count };
 }
 
 async function certifyCategoryResult(category: CategoryRow, user: CurrentAdminUser) {
@@ -412,6 +520,8 @@ export async function createNominationsAction(input: unknown) {
     })),
   );
 
+  await prepareDraftFinalistsForCycle(cycle.id);
+
   revalidateAwardPages();
 
   return { ok: true, count: validatedNominations.length };
@@ -437,6 +547,7 @@ export async function submitBallotAction(input: unknown) {
   }
 
   const db = getDb();
+  const ballotScope = parsed.data.ballotScope;
   const categoryIds = Object.keys(parsed.data.selections);
   const [cycle] = await db
     .select()
@@ -450,19 +561,22 @@ export async function submitBallotAction(input: unknown) {
   const [cycleCategories, finalists, progress] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
     db.select().from(schema.finalists),
-    getCycleCompletionProgress(cycle.id),
+    getCycleCompletionProgress(cycle.id, ballotScope),
   ]);
-  const cycleCategoryIds = new Set(cycleCategories.map((category) => category.id));
+  const scopeCategories = cycleCategories.filter(
+    (category) => category.active && category.ballotScope === ballotScope,
+  );
+  const cycleCategoryIds = new Set(scopeCategories.map((category) => category.id));
   const approvedFinalists = finalists.filter(
     (finalist) => finalist.status === "approved" && cycleCategoryIds.has(finalist.categoryId),
   );
 
-  if (!getMemberPhaseAccess(getCycleEffectiveStage(cycle, progress)).canVote) {
+  if (!getMemberPhaseAccess(stageForBallotScope(cycle, progress, ballotScope)).canVote) {
     return { ok: false, error: "Voting is not open." };
   }
 
   const ballotValidation = validateBallotSelections({
-    categories: cycleCategories,
+    categories: scopeCategories,
     finalists: approvedFinalists,
     selections: parsed.data.selections,
   });
@@ -473,6 +587,7 @@ export async function submitBallotAction(input: unknown) {
 
   try {
     await db.insert(schema.voteReceipts).values({
+      ballotScope,
       categoryIds: ballotValidation.categoryIds,
       confirmationCode,
       cycleId: parsed.data.cycleId,
@@ -488,6 +603,7 @@ export async function submitBallotAction(input: unknown) {
 
   await db.insert(schema.anonymousVotes).values(
     Object.entries(parsed.data.selections).map(([categoryId, finalistId]) => ({
+      ballotScope,
       categoryId,
       cycleId: parsed.data.cycleId,
       finalistId,
@@ -721,6 +837,80 @@ export async function approveFinalistsAction(categoryId: string) {
   return { ok: true, count: suggestions.length };
 }
 
+export async function approveAllFinalistsAction(cycleId: string) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true, count: 0 };
+
+  const prepared = await prepareDraftFinalistsForCycle(cycleId);
+  if (!prepared.ok && "error" in prepared) {
+    return { ok: false, error: prepared.error };
+  }
+
+  const db = getDb();
+  const categories = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.cycleId, cycleId));
+  const activeMainCategories = categories.filter(
+    (category) =>
+      category.active &&
+      category.ballotScope === "main" &&
+      category.kind !== "runoff",
+  );
+  const categoryIds = activeMainCategories.map((category) => category.id);
+  const finalists = categoryIds.length
+    ? await db
+        .select()
+        .from(schema.finalists)
+        .where(inArray(schema.finalists.categoryId, categoryIds))
+    : [];
+  const missingCategory = activeMainCategories.find(
+    (category) => !finalists.some((finalist) => finalist.categoryId === category.id),
+  );
+
+  if (missingCategory) {
+    return { ok: false, error: `No finalists are ready for ${missingCategory.title}.` };
+  }
+
+  let approvedCount = 0;
+
+  for (const finalist of finalists) {
+    if (finalist.status === "approved") continue;
+
+    await db
+      .update(schema.finalists)
+      .set({
+        approvedAt: new Date(),
+        status: "approved",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.finalists.id, finalist.id));
+    approvedCount += 1;
+  }
+
+  await db.insert(schema.auditEvents).values({
+    action: "approve_all_finalists",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: cycleId,
+    summary: `Approved ${approvedCount} finalists for voting.`,
+    metadata: { finalists: approvedCount },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, count: approvedCount };
+}
+
 export async function upsertMemberAction(input: unknown) {
   const user = await getCurrentUser();
 
@@ -869,13 +1059,131 @@ export async function createRunoffAction(categoryId: string) {
 
   if (!hasDatabaseUrl()) return { ok: true, demo: true };
 
-  await getDb().insert(schema.auditEvents).values({
+  const db = getDb();
+  const [category] = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.id, categoryId))
+    .limit(1);
+
+  if (!category) return { ok: false, error: "Category not found." };
+  if (category.kind === "runoff") return { ok: false, error: "This is already a runoff." };
+
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, category.cycleId))
+    .limit(1);
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+
+  const progress = await getCycleCompletionProgress(category.cycleId, "main");
+  if (getCycleEffectiveStage(cycle, progress) !== "Certification") {
+    return { ok: false, error: "Create runoffs after voting is complete." };
+  }
+
+  const existingRunoff = await db
+    .select({ id: schema.categories.id })
+    .from(schema.categories)
+    .where(
+      and(
+        eq(schema.categories.parentCategoryId, category.id),
+        eq(schema.categories.kind, "runoff"),
+        eq(schema.categories.active, true),
+      ),
+    )
+    .limit(1);
+
+  if (existingRunoff.length > 0) {
+    return { ok: false, error: "A runoff already exists for this category." };
+  }
+
+  const [approvedFinalists, votes] = await Promise.all([
+    db
+      .select()
+      .from(schema.finalists)
+      .where(
+        and(
+          eq(schema.finalists.categoryId, category.id),
+          eq(schema.finalists.status, "approved"),
+        ),
+      ),
+    db
+      .select()
+      .from(schema.anonymousVotes)
+      .where(eq(schema.anonymousVotes.categoryId, category.id)),
+  ]);
+  const result = calculateResults({
+    category,
+    finalists: approvedFinalists.map((finalist) => ({
+      categoryId: finalist.categoryId,
+      displayName: finalist.displayName,
+      id: finalist.id,
+      nominationCount: finalist.nominationCount,
+      nomineeId: finalist.nomineeId,
+    })),
+    votes,
+  });
+
+  if (result.status !== "tie" || result.tiedFinalists.length < 2) {
+    return { ok: false, error: "Runoff is only available for tied results." };
+  }
+
+  const runoffCategoryId = randomUUID();
+  const runoff = createRunoffCategory({
+    category,
+    createdById: user.member.id,
+    runoffCategoryId,
+    tiedFinalists: result.tiedFinalists,
+  }) as RunoffSetup;
+
+  await db.insert(schema.categories).values({
+    id: runoff.category.id,
+    active: true,
+    ballotScope: runoff.category.ballotScope,
+    cycleId: category.cycleId,
+    description: `${category.title} runoff ballot.`,
+    finalistLimit: runoff.category.finalistLimit,
+    kind: "runoff",
+    nominationLimit: 0,
+    nominationQuestion: `Who should win ${category.title}?`,
+    parentCategoryId: category.id,
+    title: runoff.category.title,
+  });
+  await db.insert(schema.finalists).values(
+    runoff.finalists.map((finalist) => ({
+      categoryId: finalist.categoryId,
+      displayName: finalist.displayName,
+      nominationCount: finalist.nominationCount,
+      nomineeId: finalist.nomineeId,
+      status: "approved" as const,
+      summary: finalist.summary,
+    })),
+  );
+
+  await db
+    .delete(schema.resultCertifications)
+    .where(eq(schema.resultCertifications.categoryId, category.id));
+  await db.insert(schema.resultCertifications).values({
+    categoryId: category.id,
+    certifiedAt: new Date(),
+    status: "runoff",
+    tallySnapshot: createResultCertificationSnapshot({ category, result }).tallySnapshot,
+    winnerFinalistId: null,
+  });
+
+  await db.insert(schema.auditEvents).values({
     action: "create_runoff",
     actorMemberId: user.member.id,
     actorRole: user.role,
     target: categoryId,
-    summary: "Admin created a runoff category for a tied result.",
+    summary: "Admin created a runoff ballot for a tied result.",
+    metadata: {
+      ballotScope: runoff.category.ballotScope,
+      finalists: runoff.finalists.length,
+    },
   });
+
+  revalidateAwardPages();
 
   return { ok: true };
 }
@@ -910,8 +1218,8 @@ export async function certifyResultsAction(categoryId: string) {
 
   if (!cycle) return { ok: false, error: "Cycle not found." };
 
-  const progress = await getCycleCompletionProgress(cycle.id);
-  const effectiveStage = getCycleEffectiveStage(cycle, progress);
+  const progress = await getCycleCompletionProgress(cycle.id, category.ballotScope);
+  const effectiveStage = stageForBallotScope(cycle, progress, category.ballotScope);
 
   if (effectiveStage !== "Certification" && effectiveStage !== "Published") {
     return { ok: false, error: "Certify results after every eligible member votes." };
@@ -949,7 +1257,7 @@ export async function publishWinnersAction(cycleId: string) {
 
   const [cycleCategories, progress] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
-    getCycleCompletionProgress(cycle.id),
+    getCycleCompletionProgress(cycle.id, "main"),
   ]);
   const effectiveStage = getCycleEffectiveStage(cycle, progress);
 
@@ -957,8 +1265,55 @@ export async function publishWinnersAction(cycleId: string) {
     return { ok: false, error: "Publish winners after every eligible member votes." };
   }
 
+  const activeRunoffScopes = [
+    ...new Set(
+      cycleCategories
+        .filter((category) => category.active && category.kind === "runoff")
+        .map((category) => category.ballotScope),
+    ),
+  ];
+
+  for (const ballotScope of activeRunoffScopes) {
+    const runoffProgress = await getCycleCompletionProgress(cycle.id, ballotScope);
+    if (runoffProgress.voteReceiptCount < runoffProgress.eligibleMemberCount) {
+      return { ok: false, error: "Finish runoff voting before publishing winners." };
+    }
+  }
+
+  const existingCertifications = cycleCategories.length
+    ? await db
+        .select()
+        .from(schema.resultCertifications)
+        .where(inArray(schema.resultCertifications.categoryId, cycleCategories.map((item) => item.id)))
+    : [];
+  const certificationByCategory = new Map(
+    existingCertifications.map((certification) => [certification.categoryId, certification]),
+  );
+
   for (const category of cycleCategories) {
+    if (
+      category.kind !== "runoff" &&
+      certificationByCategory.get(category.id)?.status === "runoff"
+    ) {
+      continue;
+    }
+
     await certifyCategoryResult(category, user);
+  }
+
+  const certifications = cycleCategories.length
+    ? await db
+        .select()
+        .from(schema.resultCertifications)
+        .where(inArray(schema.resultCertifications.categoryId, cycleCategories.map((item) => item.id)))
+    : [];
+  const unresolvedTieIds = getUnresolvedTieCategoryIds({
+    categories: cycleCategories,
+    certifications,
+  });
+
+  if (unresolvedTieIds.length > 0) {
+    return { ok: false, error: "Resolve tied categories with a runoff before publishing." };
   }
 
   await db

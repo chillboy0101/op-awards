@@ -134,6 +134,7 @@ export const categories = pgTable("categories", {
   active: boolean("active").notNull().default(true),
   parentCategoryId: uuid("parent_category_id"),
   kind: text("kind").notNull().default("standard"),
+  ballotScope: text("ballot_scope").notNull().default("main"),
   ...timestamps,
 });
 
@@ -188,6 +189,7 @@ export const voteReceipts = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
     memberId: uuid("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+    ballotScope: text("ballot_scope").notNull().default("main"),
     confirmationCode: text("confirmation_code").notNull(),
     categoryIds: jsonb("category_ids").$type<string[]>().notNull(),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
@@ -196,6 +198,7 @@ export const voteReceipts = pgTable(
     oneReceiptPerCycle: uniqueIndex("vote_receipts_cycle_member_unique").on(
       table.cycleId,
       table.memberId,
+      table.ballotScope,
     ),
     confirmationUnique: uniqueIndex("vote_receipts_confirmation_unique").on(
       table.confirmationCode,
@@ -208,6 +211,7 @@ export const anonymousVotes = pgTable("anonymous_votes", {
   cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
   categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
   finalistId: uuid("finalist_id").notNull().references(() => finalists.id, { onDelete: "cascade" }),
+  ballotScope: text("ballot_scope").notNull().default("main"),
   submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

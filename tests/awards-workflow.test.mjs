@@ -4,11 +4,13 @@ import { describe, it } from "node:test";
 import {
   approveFinalists,
   buildAwardCategorySetup,
+  buildDraftFinalists,
   buildNominationDirectory,
   calculateResults,
   createResultCertificationSnapshot,
   createRunoffCategory,
   createVoteReceipt,
+  getUnresolvedTieCategoryIds,
   recordAnonymousVotes,
   suggestFinalists,
   validateNominationBatch,
@@ -148,6 +150,71 @@ describe("nomination ballot", () => {
 });
 
 describe("finalist workflow", () => {
+  it("prepares draft finalists by category after nominations complete", () => {
+    const serviceCategory = {
+      id: "cat-service",
+      title: "Member Service",
+      nominationLimit: 1,
+      finalistLimit: 2,
+      active: true,
+      ballotScope: "main",
+    };
+    const nominations = [
+      { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
+      { id: "nom-2", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-4" },
+      { id: "nom-3", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-2" },
+      { id: "nom-4", categoryId: serviceCategory.id, nomineeId: "mem-1", nominatorId: "mem-2" },
+      { id: "nom-5", categoryId: serviceCategory.id, nomineeId: "mem-4", nominatorId: "mem-1" },
+      { id: "nom-6", categoryId: serviceCategory.id, nomineeId: "mem-4", nominatorId: "mem-2" },
+    ];
+
+    const drafts = buildDraftFinalists({
+      categories: [{ ...category, active: true, ballotScope: "main" }, serviceCategory],
+      members,
+      nominations,
+    });
+
+    assert.deepEqual(
+      drafts.map((draft) => ({
+        ballotScope: draft.ballotScope,
+        categoryId: draft.categoryId,
+        displayName: draft.displayName,
+        nominationCount: draft.nominationCount,
+        status: draft.status,
+      })),
+      [
+        {
+          ballotScope: "main",
+          categoryId: "cat-leadership",
+          displayName: "Blair Chen",
+          nominationCount: 2,
+          status: "draft",
+        },
+        {
+          ballotScope: "main",
+          categoryId: "cat-leadership",
+          displayName: "Devon Patel",
+          nominationCount: 1,
+          status: "draft",
+        },
+        {
+          ballotScope: "main",
+          categoryId: "cat-service",
+          displayName: "Devon Patel",
+          nominationCount: 2,
+          status: "draft",
+        },
+        {
+          ballotScope: "main",
+          categoryId: "cat-service",
+          displayName: "Ari Morgan",
+          nominationCount: 1,
+          status: "draft",
+        },
+      ],
+    );
+  });
+
   it("suggests finalists by nomination support and admin-approved finalist limit", () => {
     const nominations = [
       { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
@@ -290,6 +357,7 @@ describe("anonymous voting", () => {
 
   it("creates a voter receipt without linking anonymous vote choices to the member", () => {
     const receipt = createVoteReceipt({
+      ballotScope: "main",
       memberId: "mem-1",
       cycleId: "cycle-2026",
       categoryIds: [category.id],
@@ -303,7 +371,9 @@ describe("anonymous voting", () => {
     });
 
     assert.equal(receipt.memberId, "mem-1");
+    assert.equal(receipt.ballotScope, "main");
     assert.equal(votes.length, 1);
+    assert.equal(votes[0].ballotScope, "main");
     assert.equal(votes[0].finalistId, "fin-1");
     assert.equal(Object.hasOwn(votes[0], "memberId"), false);
     assert.equal(Object.hasOwn(votes[0], "receiptId"), false);
@@ -327,14 +397,17 @@ describe("anonymous voting", () => {
       category,
       tiedFinalists: result.tiedFinalists,
       createdById: "admin-1",
+      runoffCategoryId: "cat-leadership-runoff",
     });
 
-    assert.equal(runoff.parentCategoryId, category.id);
-    assert.equal(runoff.kind, "runoff");
+    assert.equal(runoff.category.parentCategoryId, category.id);
+    assert.equal(runoff.category.kind, "runoff");
+    assert.equal(runoff.category.ballotScope, "runoff-cat-leadership-runoff");
     assert.deepEqual(
-      runoff.eligibleFinalistIds.sort(),
+      runoff.finalists.map((finalist) => finalist.sourceFinalistId).sort(),
       ["fin-1", "fin-2"],
     );
+    assert.ok(runoff.finalists.every((finalist) => finalist.status === "approved"));
   });
 
   it("creates certification snapshots with winners, ties, and no-vote pending states", () => {
@@ -382,6 +455,49 @@ describe("anonymous voting", () => {
     assert.equal(
       createResultCertificationSnapshot({ category, result: noVoteResult }).status,
       "pending",
+    );
+  });
+
+  it("treats tied main categories without certified runoffs as unresolved", () => {
+    assert.deepEqual(
+      getUnresolvedTieCategoryIds({
+        categories: [category],
+        certifications: [
+          {
+            categoryId: category.id,
+            status: "tie",
+            winnerFinalistId: null,
+          },
+        ],
+      }),
+      [category.id],
+    );
+
+    assert.deepEqual(
+      getUnresolvedTieCategoryIds({
+        categories: [
+          category,
+          {
+            id: "cat-leadership-runoff",
+            parentCategoryId: category.id,
+            ballotScope: "runoff-cat-leadership-runoff",
+            kind: "runoff",
+          },
+        ],
+        certifications: [
+          {
+            categoryId: category.id,
+            status: "runoff",
+            winnerFinalistId: null,
+          },
+          {
+            categoryId: "cat-leadership-runoff",
+            status: "certified",
+            winnerFinalistId: "fin-runoff-1",
+          },
+        ],
+      }),
+      [],
     );
   });
 });

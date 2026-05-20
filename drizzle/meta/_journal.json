@@ -15,6 +15,13 @@
       "when": 1779184263200,
       "tag": "0001_thick_sersi",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779252710840,
+      "tag": "0002_mysterious_paladin",
+      "breakpoints": true
     }
   ]
 }
