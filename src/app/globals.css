@@ -99,19 +99,15 @@ a {
 
 .brand {
   gap: 10px;
-  min-width: 40px;
+  min-width: 132px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 8px;
-  background: #16353f;
-  color: #ffffff;
-  font-size: 0.72rem;
-  font-weight: 820;
+.brand-logo {
+  display: block;
+  width: 132px;
+  height: auto;
+  max-height: 50px;
+  object-fit: contain;
 }
 
 .brand strong,

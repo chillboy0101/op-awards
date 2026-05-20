@@ -1,6 +1,7 @@
 "use client";
 
 import { SignOutButton } from "@clerk/nextjs";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -48,9 +49,14 @@ function initials(name: string) {
 
 function Mark() {
   return (
-    <span className="brand-mark" aria-hidden="true">
-      O&P
-    </span>
+    <Image
+      alt="GRA"
+      className="brand-logo"
+      height={54}
+      priority
+      src="/brand/gra-logo.png"
+      width={142}
+    />
   );
 }
 
