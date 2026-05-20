@@ -135,7 +135,7 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Results</p>
-          <h2>{published ? "Winners" : "Pending"}</h2>
+          <h2>{published ? "Winners" : "Not published"}</h2>
         </div>
         {published ? <StagePill stage="Published" /> : null}
       </div>
@@ -349,7 +349,6 @@ function NominationExperience({
     <section className="panel work-panel">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Nomination</p>
           <h2>Pick a person</h2>
         </div>
       </div>
