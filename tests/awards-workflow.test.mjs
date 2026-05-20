@@ -90,20 +90,14 @@ describe("nomination validation", () => {
 });
 
 describe("nomination directory", () => {
-  it("keeps the signed-in member visible but marks them as self", () => {
+  it("filters the signed-in member out of nomination search results", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",
       members,
       query: "ari",
     });
 
-    assert.deepEqual(directory, [
-      {
-        ...members[0],
-        isSelf: true,
-        selectable: false,
-      },
-    ]);
+    assert.deepEqual(directory, []);
   });
 });
 
@@ -352,6 +346,38 @@ describe("anonymous voting", () => {
         },
       }),
       { ok: true, categoryIds: [communityCategory.id, serviceCategory.id] },
+    );
+  });
+
+  it("rejects a finalist selection for the signed-in member", () => {
+    const communityCategory = { id: "cat-community", active: true, title: "Community" };
+    const approvedFinalists = [
+      { id: "fin-self", categoryId: communityCategory.id, nomineeId: "mem-1", status: "approved" },
+      { id: "fin-peer", categoryId: communityCategory.id, nomineeId: "mem-2", status: "approved" },
+    ];
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory],
+        currentMemberId: "mem-1",
+        finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-self",
+        },
+      }),
+      { ok: false, reason: "SELF_VOTE_NOT_ALLOWED" },
+    );
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory],
+        currentMemberId: "mem-1",
+        finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-peer",
+        },
+      }),
+      { ok: true, categoryIds: [communityCategory.id] },
     );
   });
 

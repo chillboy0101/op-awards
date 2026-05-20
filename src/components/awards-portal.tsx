@@ -262,9 +262,7 @@ function MemberDirectory({
       <div className="people-list">
         {filteredMembers.map((member) => (
           <button
-            aria-label={
-              member.isSelf ? `${member.name}, you cannot nominate yourself` : member.name
-            }
+            aria-label={member.name}
             className={[
               "person-card",
               selectedNominee === member.id ? "is-selected" : "",
@@ -310,6 +308,8 @@ function NominationExperience({
       .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
       .map((category) => category.id),
   );
+  const heading =
+    activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
   const allCategoriesSelected =
     activeCategories.length > 0 &&
     activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
@@ -349,7 +349,7 @@ function NominationExperience({
     <section className="panel work-panel">
       <div className="panel-head">
         <div>
-          <h2>Pick a person</h2>
+          <h2>{heading}</h2>
         </div>
       </div>
       <CategoryPicker
@@ -417,7 +417,13 @@ function FinalistCard({
   );
 }
 
-function VotingExperience({ model }: { model: AwardPortalModel }) {
+function VotingExperience({
+  currentUser,
+  model,
+}: {
+  currentUser: CurrentUser;
+  model: AwardPortalModel;
+}) {
   const [selections, setSelections] = useState<VoteSelections>({});
   const [receipt, setReceipt] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -426,10 +432,13 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
   );
+  const visibleFinalists = model.finalists.filter(
+    (finalist) => finalist.nomineeId !== currentUser.member.id,
+  );
   const categoriesWithFinalists = model.categories.filter((category) =>
     category.active &&
     category.ballotScope === model.currentBallotScope &&
-    model.finalists.some(
+    visibleFinalists.some(
       (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
     ),
   );
@@ -466,7 +475,10 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       <div className="ballot-list">
         {categoriesWithFinalists.map((category) => {
           const finalists = model.finalists.filter(
-            (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
+            (finalist) =>
+              finalist.categoryId === category.id &&
+              finalist.status === "approved" &&
+              finalist.nomineeId !== currentUser.member.id,
           );
 
           return (
@@ -524,7 +536,7 @@ export function MemberAwardsPage({
         <ProfilePill currentUser={currentUser} />
       </section>
       {access.canNominate ? <NominationExperience currentUser={currentUser} model={model} /> : null}
-      {access.canVote ? <VotingExperience model={model} /> : null}
+      {access.canVote ? <VotingExperience currentUser={currentUser} model={model} /> : null}
       {!access.canNominate && !access.canVote ? (
         <section className="panel">
           <EmptyState message={access.message} />

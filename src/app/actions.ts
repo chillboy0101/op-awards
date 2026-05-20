@@ -577,11 +577,16 @@ export async function submitBallotAction(input: unknown) {
 
   const ballotValidation = validateBallotSelections({
     categories: scopeCategories,
+    currentMemberId: user.member.id,
     finalists: approvedFinalists,
     selections: parsed.data.selections,
   });
 
   if (!ballotValidation.ok) {
+    if (ballotValidation.reason === "SELF_VOTE_NOT_ALLOWED") {
+      return { ok: false, error: "You cannot vote for yourself." };
+    }
+
     return { ok: false, error: "Select one approved finalist per category." };
   }
 

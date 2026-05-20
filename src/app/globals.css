@@ -348,6 +348,7 @@ a {
 }
 
 .profile-signout {
+  margin-left: auto;
   min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
@@ -929,6 +930,10 @@ textarea:focus {
   .hero-panel,
   .member-hero {
     padding: 22px;
+  }
+
+  .member-hero .profile-pill {
+    width: 100%;
   }
 
   .hero-side {

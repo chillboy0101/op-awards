@@ -28,6 +28,7 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
 
   return members
     .filter((member) => member.status === "active")
+    .filter((member) => member.id !== currentMemberId)
     .filter((member) => {
       if (!normalizedQuery) return true;
 
@@ -255,18 +256,29 @@ export function createVoteReceipt({
   };
 }
 
-export function validateBallotSelections({ categories, finalists, selections }) {
+export function validateBallotSelections({ categories, currentMemberId, finalists, selections }) {
+  const approvedFinalists = finalists.filter((finalist) => finalist.status === "approved");
   const approvedFinalistById = new Map(
-    finalists
-      .filter((finalist) => finalist.status === "approved")
-      .map((finalist) => [finalist.id, finalist]),
+    approvedFinalists.map((finalist) => [finalist.id, finalist]),
   );
+  const visibleApprovedFinalists = currentMemberId
+    ? approvedFinalists.filter((finalist) => finalist.nomineeId !== currentMemberId)
+    : approvedFinalists;
+
+  for (const finalistId of Object.values(selections)) {
+    const finalist = approvedFinalistById.get(finalistId);
+
+    if (currentMemberId && finalist?.nomineeId === currentMemberId) {
+      return { ok: false, reason: "SELF_VOTE_NOT_ALLOWED" };
+    }
+  }
+
   const ballotCategories = categories.filter(
     (category) =>
       category.active !== false &&
-      finalists.some(
+      visibleApprovedFinalists.some(
         (finalist) =>
-          finalist.status === "approved" && finalist.categoryId === category.id,
+          finalist.categoryId === category.id,
       ),
   );
   const categoryIds = ballotCategories.map((category) => category.id);
@@ -282,7 +294,11 @@ export function validateBallotSelections({ categories, finalists, selections }) 
   for (const categoryId of categoryIds) {
     const finalist = approvedFinalistById.get(selections[categoryId]);
 
-    if (!finalist || finalist.categoryId !== categoryId) {
+    if (
+      !finalist ||
+      finalist.categoryId !== categoryId ||
+      (currentMemberId && finalist.nomineeId === currentMemberId)
+    ) {
       return { ok: false, reason: "INVALID_FINALIST_SELECTION" };
     }
   }
