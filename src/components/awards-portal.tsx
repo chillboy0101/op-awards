@@ -178,7 +178,7 @@ function getStageAction(stage: string) {
 function PublicCycleStatus({ model }: { model: AwardPortalModel }) {
   return (
     <section className="status-strip" aria-label="Current awards status">
-      <span className="status-label">Current cycle</span>
+      <strong>Current cycle</strong>
       <span>{getStageAction(model.cycle.stage)}</span>
     </section>
   );

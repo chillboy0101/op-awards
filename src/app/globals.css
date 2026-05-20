@@ -188,10 +188,6 @@ a {
   letter-spacing: 0;
 }
 
-.hero-panel h1 {
-  color: #efc76d;
-}
-
 .member-hero p {
   margin: 8px 0 0;
   color: rgba(255, 255, 255, 0.75);
@@ -242,20 +238,6 @@ a {
   padding: 14px 16px;
   color: var(--muted);
   box-shadow: 0 10px 24px rgba(30, 41, 59, 0.045);
-}
-
-.status-label {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  border: 1px solid rgba(176, 119, 18, 0.24);
-  border-radius: 999px;
-  background: #fff7e3;
-  color: var(--gold-dark);
-  padding: 5px 11px;
-  font-size: 0.78rem;
-  font-weight: 760;
-  white-space: nowrap;
 }
 
 .panel {
