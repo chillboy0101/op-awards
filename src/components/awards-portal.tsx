@@ -549,7 +549,7 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
   }
 
   return (
-    <section className="panel">
+    <section className="panel roster-panel">
       <div className="panel-head">
         <div>
           <p className="eyebrow">Clerk roster</p>
@@ -559,9 +559,9 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
           {pending ? "Syncing" : "Sync"}
         </button>
       </div>
-      <div className="compact-list">
+      <div className="people-list admin-roster-list">
         {model.members.map((member) => (
-          <div className="compact-row" key={member.id}>
+          <div className="compact-row admin-roster-card" key={member.id}>
             <PersonAvatar member={member} name={member.name} />
             <span>
               <strong>{member.name}</strong>
@@ -1034,9 +1034,9 @@ export function AdminAwardsPage({
       </section>
       <section className="admin-grid">
         <AdminCycle model={model} />
-        <AdminQueues model={model} />
         <AdminCategoryManager model={model} />
         <AdminRoster model={model} />
+        <AdminQueues model={model} />
       </section>
     </main>
   );

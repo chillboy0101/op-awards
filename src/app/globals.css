@@ -685,6 +685,7 @@ textarea:focus {
 }
 
 .command-panel,
+.roster-panel,
 .wide-panel {
   grid-column: 1 / -1;
 }
@@ -755,6 +756,24 @@ textarea:focus {
 .category-edit-row {
   width: 100%;
   text-align: left;
+}
+
+.admin-roster-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-roster-card {
+  min-width: 0;
+}
+
+.admin-roster-card > span {
+  min-width: 0;
+}
+
+.admin-roster-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .category-action-row {
