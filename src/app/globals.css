@@ -665,6 +665,25 @@ textarea:focus {
   gap: 4px;
 }
 
+.sticky-category-head {
+  position: sticky;
+  top: 88px;
+  z-index: 12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 12px 14px;
+  box-shadow: 0 10px 24px rgba(30, 41, 59, 0.08);
+  outline: none;
+}
+
+.sticky-category-head:focus {
+  border-color: var(--accent);
+  box-shadow:
+    0 10px 24px rgba(30, 41, 59, 0.08),
+    0 0 0 3px rgba(23, 107, 96, 0.12);
+}
+
 .ballot-category-head span {
   color: var(--muted);
   font-size: 0.84rem;
@@ -672,7 +691,8 @@ textarea:focus {
 }
 
 .ballot-category-head strong {
-  font-size: 1.22rem;
+  font-size: clamp(1.28rem, 2.4vw, 1.75rem);
+  line-height: 1.05;
 }
 
 .ballot-category h3 {
@@ -817,6 +837,7 @@ textarea:focus {
 }
 
 .command-panel,
+.category-panel,
 .roster-panel,
 .wide-panel {
   grid-column: 1 / -1;
@@ -906,6 +927,14 @@ textarea:focus {
 .category-edit-row {
   width: 100%;
   text-align: left;
+}
+
+.category-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.category-list .category-edit-row {
+  align-items: center;
 }
 
 .admin-roster-list {
@@ -1144,6 +1173,10 @@ textarea:focus {
     padding: 22px;
   }
 
+  .sticky-category-head {
+    top: 78px;
+  }
+
   .public-hero h1 {
     font-size: clamp(2.4rem, 13vw, 4.4rem);
   }
@@ -1158,6 +1191,7 @@ textarea:focus {
 
   .admin-grid,
   .admin-columns,
+  .category-list,
   .finalist-grid,
   .progress-grid,
   .schedule-form-grid,

@@ -4,7 +4,7 @@ import { SignOutButton } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -355,6 +355,8 @@ function NominationExperience({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const categoryHeaderRef = useRef<HTMLDivElement | null>(null);
+  const shouldFocusCategoryRef = useRef(false);
   const safeCategoryIndex = Math.min(
     currentCategoryIndex,
     Math.max(activeCategories.length - 1, 0),
@@ -386,9 +388,27 @@ function NominationExperience({
     activeCategories.length > 0 &&
     activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
 
+  const focusCategoryHeader = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      categoryHeaderRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      categoryHeaderRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!shouldFocusCategoryRef.current || !currentCategory) return;
+
+    shouldFocusCategoryRef.current = false;
+    focusCategoryHeader();
+  }, [currentCategory, focusCategoryHeader]);
+
   function goToCategory(index: number) {
     setMessage(null);
-    setCurrentCategoryIndex(Math.min(Math.max(index, 0), activeCategories.length - 1));
+    const nextIndex = Math.min(Math.max(index, 0), activeCategories.length - 1);
+
+    shouldFocusCategoryRef.current = true;
+    setCurrentCategoryIndex(nextIndex);
+    if (nextIndex === safeCategoryIndex) focusCategoryHeader();
   }
 
   function selectNominee(categoryId: string, nomineeId: string) {
@@ -402,10 +422,6 @@ function NominationExperience({
         nomineeId: nextNomineeId,
       },
     }));
-
-    if (nextNomineeId && safeCategoryIndex < activeCategories.length - 1) {
-      setCurrentCategoryIndex(safeCategoryIndex + 1);
-    }
   }
 
   function submitNomination() {
@@ -442,7 +458,7 @@ function NominationExperience({
       {!hasSubmittedNominations && currentCategory ? (
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
-            <div className="ballot-category-head">
+            <div className="ballot-category-head sticky-category-head" ref={categoryHeaderRef} tabIndex={-1}>
               <span>
                 Category {safeCategoryIndex + 1} of {activeCategories.length}
               </span>
@@ -528,6 +544,8 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
   const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const categoryHeaderRef = useRef<HTMLDivElement | null>(null);
+  const shouldFocusCategoryRef = useRef(false);
   const memberById = useMemo(
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
@@ -567,9 +585,27 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
   const completedCount = categoriesWithFinalists.filter((category) => selections[category.id]).length;
   const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
 
+  const focusCategoryHeader = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      categoryHeaderRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      categoryHeaderRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!shouldFocusCategoryRef.current || !currentCategory) return;
+
+    shouldFocusCategoryRef.current = false;
+    focusCategoryHeader();
+  }, [currentCategory, focusCategoryHeader]);
+
   function goToCategory(index: number) {
     setMessage(null);
-    setCurrentCategoryIndex(Math.min(Math.max(index, 0), categoriesWithFinalists.length - 1));
+    const nextIndex = Math.min(Math.max(index, 0), categoriesWithFinalists.length - 1);
+
+    shouldFocusCategoryRef.current = true;
+    setCurrentCategoryIndex(nextIndex);
+    if (nextIndex === safeCategoryIndex) focusCategoryHeader();
   }
 
   function selectFinalist(categoryId: string, finalistId: string) {
@@ -587,10 +623,6 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
 
       return next;
     });
-
-    if (nextSelection && safeCategoryIndex < categoriesWithFinalists.length - 1) {
-      setCurrentCategoryIndex(safeCategoryIndex + 1);
-    }
   }
 
   function submitBallot() {
@@ -606,7 +638,9 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       );
 
       if (firstMissingIndex >= 0) {
+        shouldFocusCategoryRef.current = true;
         setCurrentCategoryIndex(firstMissingIndex);
+        if (firstMissingIndex === safeCategoryIndex) focusCategoryHeader();
       }
 
       setMessage(`Select a vote for: ${missingCategories.join(", ")}.`);
@@ -648,7 +682,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       {!submittedReceipt && currentCategory ? (
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
-            <div className="ballot-category-head">
+            <div className="ballot-category-head sticky-category-head" ref={categoryHeaderRef} tabIndex={-1}>
               <span>
                 Category {safeCategoryIndex + 1} of {categoriesWithFinalists.length}
               </span>
@@ -1055,7 +1089,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   }
 
   return (
-    <section className="panel">
+    <section className="panel category-panel">
       <div className="panel-head">
         <div>
           <p className="eyebrow">Categories</p>
@@ -1065,7 +1099,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
           New
         </button>
       </div>
-      <div className="compact-list">
+      <div className="compact-list category-list">
         {model.categories.map((category) => (
           <article className="compact-row category-edit-row" key={category.id}>
             <span>
