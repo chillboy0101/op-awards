@@ -678,6 +678,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
   const progress = model.progress;
   const canOpenNominations = model.cycle.configuredStage === "Draft";
   const canPublish = model.cycle.stage === "Certification" && !model.hasUnresolvedTies;
+  const canShowPublish = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
 
   function openNominations() {
     setMessage(null);
@@ -766,24 +767,30 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
         </span>
       </div>
       <div className="cycle-actions">
-        <span>Review, certification, and publishing stay under admin control.</span>
-        {model.hasUnresolvedTies ? <span>Resolve tied categories with a runoff.</span> : null}
-        {canOpenNominations ? (
-          <button className="secondary-action" disabled={pending} onClick={openNominations} type="button">
-            Open nominations
+        <div className="cycle-action-copy">
+          <span>Review, certification, and publishing stay under admin control.</span>
+          {model.hasUnresolvedTies ? <span>Resolve tied categories with a runoff.</span> : null}
+        </div>
+        <div className="cycle-action-buttons">
+          {canOpenNominations ? (
+            <button className="secondary-action" disabled={pending} onClick={openNominations} type="button">
+              Open nominations
+            </button>
+          ) : null}
+          {canShowPublish ? (
+            <button
+              className="primary-action"
+              disabled={pending || !canPublish}
+              onClick={publishWinners}
+              type="button"
+            >
+              {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
+            </button>
+          ) : null}
+          <button className="danger-action" disabled={pending} onClick={resetAwardsRun} type="button">
+            Reset awards run
           </button>
-        ) : null}
-        <button
-          className="primary-action"
-          disabled={pending || !canPublish}
-          onClick={publishWinners}
-          type="button"
-        >
-          {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
-        </button>
-        <button className="danger-action" disabled={pending} onClick={resetAwardsRun} type="button">
-          Reset awards run
-        </button>
+        </div>
       </div>
       {message ? <div className="notice">{message}</div> : null}
     </section>

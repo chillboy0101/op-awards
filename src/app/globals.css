@@ -706,17 +706,31 @@ textarea:focus {
 }
 
 .schedule-row span,
-.cycle-actions span {
+.cycle-action-copy span {
   color: var(--muted);
   font-size: 0.9rem;
 }
 
 .cycle-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-top: 2px;
+}
+
+.cycle-action-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cycle-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .admin-columns {
@@ -969,10 +983,24 @@ textarea:focus {
   }
 
   .status-strip,
-  .progress-note,
-  .cycle-actions {
+  .progress-note {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .cycle-actions {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .cycle-action-buttons {
+    justify-content: stretch;
+  }
+
+  .cycle-action-buttons .primary-action,
+  .cycle-action-buttons .secondary-action,
+  .cycle-action-buttons .danger-action {
+    width: 100%;
   }
 }
 
