@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
-  approveAllFinalistsAction,
   bulkUpdateMemberEligibilityAction,
   certifyResultsAction,
   createNominationsAction,
@@ -923,7 +922,6 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
 function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const blankCategory = {
     categoryId: "",
-    finalistLimit: 3,
     title: "",
   };
   const [categoryForm, setCategoryForm] = useState(blankCategory);
@@ -964,7 +962,6 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
     setMessage(null);
     setCategoryForm({
       categoryId: category.id,
-      finalistLimit: category.finalistLimit,
       title: category.title,
     });
     setCategoryModalOpen(true);
@@ -1020,7 +1017,9 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
           <article className="compact-row category-edit-row" key={category.id}>
             <span>
               <strong>{category.title}</strong>
-              <small>{formatCategoryVotingSummary(category)}</small>
+              <small>
+                {formatCategoryVotingSummary(category, model.progress.eligibleMemberCount)}
+              </small>
             </span>
             <div className="row-actions">
               <button
@@ -1085,20 +1084,6 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
                   value={categoryForm.title}
                 />
               </label>
-              <label>
-                <span>Nominees for voting</span>
-                <input
-                  min={1}
-                  onChange={(event) =>
-                    setCategoryForm((current) => ({
-                      ...current,
-                      finalistLimit: Number(event.target.value),
-                    }))
-                  }
-                  type="number"
-                  value={categoryForm.finalistLimit}
-                />
-              </label>
             </div>
             <div className="modal-actions">
               <button className="secondary-action" onClick={closeCategoryModal} type="button">
@@ -1160,7 +1145,7 @@ function CategoryActionRow({
       <span>
         <strong>{category.title}</strong>
         <small>
-          {nominationCount} nominations / {finalistCount} approved finalists
+          {nominationCount} nominations / {finalistCount} voting nominees
         </small>
         {message ? <small className="inline-message">{message}</small> : null}
       </span>
@@ -1177,14 +1162,15 @@ function CategoryActionRow({
 }
 
 function AdminQueues({ model }: { model: AwardPortalModel }) {
-  const canReview = model.cycle.stage === "Review";
   const canCertify = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-  const draftFinalistCount = model.finalistReview.reduce(
+  const draftNomineeCount = model.finalistReview.reduce(
     (total, group) =>
       total + group.finalists.filter((finalist) => finalist.status === "draft").length,
+    0,
+  );
+  const approvedNomineeCount = model.finalistReview.reduce(
+    (total, group) =>
+      total + group.finalists.filter((finalist) => finalist.status === "approved").length,
     0,
   );
   const nominationGroups = useMemo(
@@ -1197,19 +1183,6 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
     [model.categories, model.members, model.nominations],
   );
 
-  function approveAllFinalists() {
-    setMessage(null);
-    startTransition(async () => {
-      const result = (await approveAllFinalistsAction(model.cycle.id)) as PortalResult;
-      setMessage(
-        result.ok
-          ? `Approved ${result.count ?? 0} finalists.`
-          : result.error ?? "Unable to approve finalists.",
-      );
-      if (result.ok) router.refresh();
-    });
-  }
-
   return (
     <section className="panel wide-panel">
       <div className="panel-head">
@@ -1217,16 +1190,8 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Review</p>
           <h2>Nomination review</h2>
         </div>
-        <button
-          className="primary-action"
-          disabled={pending || !canReview}
-          onClick={approveAllFinalists}
-          type="button"
-        >
-          {pending ? "Approving" : "Approve all finalists"}
-        </button>
+        <StagePill stage="Automatic" />
       </div>
-      {message ? <div className="notice">{message}</div> : null}
       <div className="admin-columns">
         <div className="queue-block">
           <div className="queue-head">
@@ -1262,33 +1227,37 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
         </div>
         <div className="queue-block">
           <div className="queue-head">
-            <h3>Draft finalists</h3>
-            <small>{draftFinalistCount} awaiting approval</small>
+            <h3>Voting nominees</h3>
+            <small>
+              {approvedNomineeCount} prepared automatically
+              {draftNomineeCount ? ` / ${draftNomineeCount} legacy drafts` : ""}
+            </small>
           </div>
           <div className="mini-list">
             {model.finalistReview.length === 0 ? (
-              <EmptyState message="Finalists will appear after nominations complete." />
+              <EmptyState message="Voting nominees appear automatically after nominations complete." />
             ) : null}
             {model.finalistReview.map((group) => (
               <article className="mini-row review-row" key={group.category.id}>
                 <span>
                   <strong>{group.category.title}</strong>
                   <small>
-                    {group.finalists.length
+                    {group.finalists.filter((finalist) => finalist.status === "approved").length
                       ? group.finalists
+                          .filter((finalist) => finalist.status === "approved")
                           .map(
                             (finalist) =>
                               `${finalist.displayName} (${finalist.nominationCount})`,
                           )
                           .join(", ")
-                      : "No finalists prepared yet"}
+                      : "Waiting for completed nominations"}
                   </small>
                 </span>
                 <StagePill
                   stage={
-                    group.finalists.some((finalist) => finalist.status === "draft")
-                      ? "Draft"
-                      : "Approved"
+                    group.finalists.some((finalist) => finalist.status === "approved")
+                      ? "Ready"
+                      : "Pending"
                   }
                 />
               </article>

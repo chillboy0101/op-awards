@@ -67,12 +67,19 @@ export function buildAwardCategorySetup(input) {
   };
 }
 
-export function formatCategoryVotingSummary(category) {
-  const finalistLimit = positiveInteger(category.finalistLimit, 3);
-  const nomineeLabel = finalistLimit === 1 ? "nominee" : "nominees";
-  const verb = finalistLimit === 1 ? "moves" : "move";
+export function formatCategoryVotingSummary(category, eligibleMemberCount) {
+  const threshold = getNominationSupportThreshold(
+    eligibleMemberCount ?? category?.eligibleMemberCount,
+  );
 
-  return `${finalistLimit} ${nomineeLabel} ${verb} to voting`;
+  return `Automatic: needs ${threshold} nominations, or top tied nominee if below threshold`;
+}
+
+export function getNominationSupportThreshold(eligibleMemberCount) {
+  const count = Number(eligibleMemberCount);
+  const normalizedCount = Number.isFinite(count) && count > 0 ? count : 0;
+
+  return Math.max(2, Math.ceil(normalizedCount * 0.15));
 }
 
 export function getResetCategoryIds(categories) {
@@ -244,13 +251,21 @@ export function validateNominationBatch({
 
 export function suggestFinalists({ members, category, nominations }) {
   const counts = new Map();
+  const eligibleMembers = members.filter(
+    (member) => member.status === "active" && member.awardsEligible !== false,
+  );
+  const eligibleMemberIds = new Set(eligibleMembers.map((member) => member.id));
 
   for (const nomination of nominations) {
     if (nomination.categoryId !== category.id) continue;
+    if (!eligibleMemberIds.has(nomination.nominatorId)) continue;
+    if (!eligibleMemberIds.has(nomination.nomineeId)) continue;
+
     counts.set(nomination.nomineeId, (counts.get(nomination.nomineeId) ?? 0) + 1);
   }
 
-  return [...counts.entries()]
+  const threshold = getNominationSupportThreshold(eligibleMemberIds.size);
+  const rankedSuggestions = [...counts.entries()]
     .map(([nomineeId, nominationCount]) => {
       const member = findMember(members, nomineeId);
 
@@ -268,8 +283,16 @@ export function suggestFinalists({ members, category, nominations }) {
       }
 
       return left.displayName.localeCompare(right.displayName);
-    })
-    .slice(0, category.finalistLimit ?? 5);
+    });
+  const thresholdSuggestions = rankedSuggestions.filter(
+    (suggestion) => suggestion.nominationCount >= threshold,
+  );
+
+  if (thresholdSuggestions.length > 0) return thresholdSuggestions;
+
+  const topCount = rankedSuggestions[0]?.nominationCount ?? 0;
+
+  return rankedSuggestions.filter((suggestion) => suggestion.nominationCount === topCount);
 }
 
 export function buildDraftFinalists({ categories, members, nominations }) {
@@ -283,7 +306,7 @@ export function buildDraftFinalists({ categories, members, nominations }) {
         displayName: suggestion.displayName,
         nomineeId: suggestion.nomineeId,
         nominationCount: suggestion.nominationCount,
-        status: "draft",
+        status: "approved",
         summary: `${suggestion.nominationCount} nomination${
           suggestion.nominationCount === 1 ? "" : "s"
         } received.`,
@@ -294,7 +317,6 @@ export function buildDraftFinalists({ categories, members, nominations }) {
 export function approveFinalists({ category, approvedById, suggestedFinalists }) {
   return suggestedFinalists
     .filter((suggestion) => suggestion.eligible)
-    .slice(0, category.finalistLimit ?? 5)
     .map((suggestion, index) => ({
       id: `${category.id}-finalist-${index + 1}`,
       categoryId: category.id,

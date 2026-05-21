@@ -71,7 +71,7 @@ const resetAwardsRunSchema = z.object({
 const categorySetupSchema = z.object({
   active: z.boolean().default(true),
   categoryId: z.string().optional(),
-  finalistLimit: z.coerce.number().int().min(1).max(20),
+  finalistLimit: z.coerce.number().int().min(1).max(20).optional().default(3),
   title: z.string().min(1),
 });
 
@@ -102,11 +102,12 @@ type CycleTiming = {
 type CategoryRow = typeof schema.categories.$inferSelect;
 type CurrentAdminUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 type DraftFinalist = {
+  ballotScope?: string;
   categoryId: string;
   displayName: string;
   nominationCount: number;
   nomineeId: string;
-  status: "draft";
+  status: "draft" | "approved";
   summary: string;
 };
 type RunoffSetup = {
@@ -271,6 +272,11 @@ export async function prepareDraftFinalistsForCycle(cycleId: string) {
     nominations,
   }) as DraftFinalist[];
   let count = 0;
+  const approvedCategoryIds = new Set(
+    finalists
+      .filter((finalist) => finalist.status === "approved")
+      .map((finalist) => finalist.categoryId),
+  );
 
   for (const category of mainCategories) {
     const categoryHasVotes = voteRows.some((vote) => vote.categoryId === category.id);
@@ -286,15 +292,29 @@ export async function prepareDraftFinalistsForCycle(cycleId: string) {
     await db.delete(schema.finalists).where(eq(schema.finalists.categoryId, category.id));
     await db.insert(schema.finalists).values(
       categoryDrafts.map((draft) => ({
+        approvedAt: draft.status === "approved" ? new Date() : null,
         categoryId: draft.categoryId,
         displayName: draft.displayName,
         nominationCount: draft.nominationCount,
         nomineeId: draft.nomineeId,
-        status: "draft" as const,
+        status: draft.status,
         summary: draft.summary,
       })),
     );
+    if (categoryDrafts.some((draft) => draft.status === "approved")) {
+      approvedCategoryIds.add(category.id);
+    }
     count += categoryDrafts.length;
+  }
+
+  if (
+    mainCategories.length > 0 &&
+    mainCategories.every((category) => approvedCategoryIds.has(category.id))
+  ) {
+    await db
+      .update(schema.awardCycles)
+      .set({ stage: "voting", updatedAt: new Date() })
+      .where(eq(schema.awardCycles.id, cycleId));
   }
 
   return { ok: true, count };
@@ -385,10 +405,6 @@ export async function createNominationAction(input: unknown) {
   const parsed = nominationSchema.safeParse(input);
 
   if (!parsed.success) return { ok: false, error: "Check the nomination fields." };
-  if (parsed.data.nomineeId === user.member.id) {
-    return { ok: false, error: "Self-nominations are not allowed." };
-  }
-
   if (!hasDatabaseUrl()) {
     if (!getMemberPhaseAccess(getDemoEffectiveStage()).canNominate) {
       return { ok: false, error: "Nominations are not open." };
@@ -463,10 +479,6 @@ export async function createNominationsAction(input: unknown) {
   const parsed = nominationBatchSchema.safeParse(input);
 
   if (!parsed.success) return { ok: false, error: "Select one person for every category." };
-
-  if (parsed.data.nominations.some((nomination) => nomination.nomineeId === user.member.id)) {
-    return { ok: false, error: "Self-nominations are not allowed." };
-  }
 
   if (!hasDatabaseUrl()) {
     if (!getMemberPhaseAccess(getDemoEffectiveStage()).canNominate) {

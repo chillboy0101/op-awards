@@ -12,6 +12,7 @@ import {
   createVoteReceipt,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
+  getNominationSupportThreshold,
   getResetCategoryIds,
   getUnresolvedTieCategoryIds,
   groupNominationsByNominator,
@@ -226,7 +227,13 @@ describe("nomination ballot", () => {
 });
 
 describe("finalist workflow", () => {
-  it("prepares draft finalists by category after nominations complete", () => {
+  it("calculates the automatic nomination threshold from eligible members", () => {
+    assert.equal(getNominationSupportThreshold(4), 2);
+    assert.equal(getNominationSupportThreshold(16), 3);
+    assert.equal(getNominationSupportThreshold(30), 5);
+  });
+
+  it("prepares approved voting nominees automatically after nominations complete", () => {
     const serviceCategory = {
       id: "cat-service",
       title: "Member Service",
@@ -264,40 +271,60 @@ describe("finalist workflow", () => {
           categoryId: "cat-leadership",
           displayName: "Blair Chen",
           nominationCount: 2,
-          status: "draft",
-        },
-        {
-          ballotScope: "main",
-          categoryId: "cat-leadership",
-          displayName: "Devon Patel",
-          nominationCount: 1,
-          status: "draft",
+          status: "approved",
         },
         {
           ballotScope: "main",
           categoryId: "cat-service",
           displayName: "Devon Patel",
           nominationCount: 2,
-          status: "draft",
-        },
-        {
-          ballotScope: "main",
-          categoryId: "cat-service",
-          displayName: "Ari Morgan",
-          nominationCount: 1,
-          status: "draft",
+          status: "approved",
         },
       ],
     );
   });
 
-  it("suggests finalists by nomination support and admin-approved finalist limit", () => {
+  it("selects every nominee meeting the threshold without applying the fixed finalist limit", () => {
+    const eligibleMembers = Array.from({ length: 16 }, (_, index) => ({
+      id: `mem-${index + 1}`,
+      name: `Member ${index + 1}`,
+      email: `member-${index + 1}@cpa.test`,
+      status: "active",
+    }));
+    const cappedCategory = { ...category, finalistLimit: 1 };
+    const nominations = [
+      { id: "nom-1", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-4" },
+      { id: "nom-2", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-5" },
+      { id: "nom-3", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-6" },
+      { id: "nom-4", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-7" },
+      { id: "nom-5", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-8" },
+      { id: "nom-6", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-9" },
+      { id: "nom-7", categoryId: category.id, nomineeId: "mem-3", nominatorId: "mem-10" },
+      { id: "nom-8", categoryId: category.id, nomineeId: "mem-3", nominatorId: "mem-11" },
+    ];
+
+    const suggestions = suggestFinalists({
+      category: cappedCategory,
+      members: eligibleMembers,
+      nominations,
+    });
+
+    assert.deepEqual(
+      suggestions.map((suggestion) => ({
+        nomineeId: suggestion.nomineeId,
+        nominationCount: suggestion.nominationCount,
+      })),
+      [
+        { nomineeId: "mem-1", nominationCount: 3 },
+        { nomineeId: "mem-2", nominationCount: 3 },
+      ],
+    );
+  });
+
+  it("falls back to all top-tied nominees when nobody reaches the threshold", () => {
     const nominations = [
       { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
-      { id: "nom-2", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-4" },
-      { id: "nom-3", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-1" },
-      { id: "nom-4", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-2" },
-      { id: "nom-5", categoryId: category.id, nomineeId: "mem-3", nominatorId: "mem-4" },
+      { id: "nom-2", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-2" },
     ];
 
     const suggestions = suggestFinalists({ members, category, nominations });
@@ -306,41 +333,48 @@ describe("finalist workflow", () => {
       suggestions.map((suggestion) => ({
         nomineeId: suggestion.nomineeId,
         nominationCount: suggestion.nominationCount,
-        eligible: suggestion.eligible,
       })),
       [
-        { nomineeId: "mem-2", nominationCount: 2, eligible: true },
-        { nomineeId: "mem-1", nominationCount: 1, eligible: true },
-        { nomineeId: "mem-4", nominationCount: 1, eligible: true },
+        { nomineeId: "mem-2", nominationCount: 1 },
+        { nomineeId: "mem-4", nominationCount: 1 },
       ],
     );
+  });
+
+  it("keeps approveFinalists as a compatibility helper without fixed caps", () => {
+    const suggestions = [
+      { nomineeId: "mem-1", displayName: "Ari Morgan", nominationCount: 3, eligible: true },
+      { nomineeId: "mem-2", displayName: "Blair Chen", nominationCount: 3, eligible: true },
+    ];
 
     const finalists = approveFinalists({
-      category,
+      category: { ...category, finalistLimit: 1 },
       approvedById: "admin-1",
       suggestedFinalists: suggestions,
     });
 
-    assert.equal(finalists.length, 3);
+    assert.equal(finalists.length, 2);
     assert.ok(finalists.every((finalist) => finalist.status === "approved"));
   });
 
-  it("does not suggest excluded nominees as finalists", () => {
+  it("does not count excluded nominators or excluded nominees", () => {
     const suggestions = suggestFinalists({
       members: [
         { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, status: "active" },
         { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, status: "active" },
+        { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, status: "active" },
       ],
       category,
       nominations: [
         { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
         { id: "nom-2", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-2" },
+        { id: "nom-3", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-1" },
       ],
     });
 
     assert.deepEqual(
       suggestions.map((suggestion) => suggestion.nomineeId),
-      ["mem-1"],
+      ["mem-4"],
     );
   });
 });
@@ -419,14 +453,14 @@ describe("admin nomination review", () => {
 });
 
 describe("category setup", () => {
-  it("describes only how many nominees move to voting", () => {
+  it("describes automatic nominee selection without a fixed limit", () => {
     assert.equal(
-      formatCategoryVotingSummary({ finalistLimit: 1 }),
-      "1 nominee moves to voting",
+      formatCategoryVotingSummary({}, 16),
+      "Automatic: needs 3 nominations, or top tied nominee if below threshold",
     );
     assert.equal(
-      formatCategoryVotingSummary({ finalistLimit: 2 }),
-      "2 nominees move to voting",
+      formatCategoryVotingSummary({}, 4),
+      "Automatic: needs 2 nominations, or top tied nominee if below threshold",
     );
   });
 
