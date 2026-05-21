@@ -45,11 +45,9 @@ body {
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(5px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -943,10 +941,9 @@ textarea:focus {
   inset: 0;
   z-index: 40;
   display: grid;
-  align-items: start;
-  justify-items: center;
+  place-items: center;
   overflow-y: auto;
-  padding: clamp(14px, 5vh, 32px) 18px;
+  padding: 18px;
   background: rgba(15, 23, 42, 0.38);
 }
 

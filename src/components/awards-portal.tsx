@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 
 import {
   bulkUpdateMemberEligibilityAction,
@@ -1053,7 +1054,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
         ))}
       </div>
       {message ? <div className="notice">{message}</div> : null}
-      {categoryModalOpen ? (
+      {categoryModalOpen && typeof document !== "undefined" ? createPortal(
         <div
           className="modal-backdrop"
           onMouseDown={(event) => {
@@ -1109,7 +1110,8 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </section>
   );
