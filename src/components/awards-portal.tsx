@@ -8,13 +8,16 @@ import { useMemo, useState, useTransition } from "react";
 
 import {
   approveAllFinalistsAction,
+  bulkUpdateMemberEligibilityAction,
   certifyResultsAction,
   createNominationsAction,
   createRunoffAction,
   deleteCategoryAction,
   publishWinnersAction,
+  resetAwardsRunAction,
   submitBallotAction,
   syncClerkRosterAction,
+  updateMemberEligibilityAction,
   updateCycleStageAction,
   upsertCategoryAction,
 } from "@/app/actions";
@@ -33,6 +36,7 @@ type PortalResult = {
   error?: string;
   ok: boolean;
   confirmationCode?: string;
+  awardsEligible?: boolean;
 };
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -432,8 +436,19 @@ function VotingExperience({
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
   );
+  const eligibleMemberIds = useMemo(
+    () =>
+      new Set(
+        model.members
+          .filter((member) => member.awardsEligible !== false)
+          .map((member) => member.id),
+      ),
+    [model.members],
+  );
   const visibleFinalists = model.finalists.filter(
-    (finalist) => finalist.nomineeId !== currentUser.member.id,
+    (finalist) =>
+      finalist.nomineeId !== currentUser.member.id &&
+      eligibleMemberIds.has(finalist.nomineeId),
   );
   const categoriesWithFinalists = model.categories.filter((category) =>
     category.active &&
@@ -478,7 +493,8 @@ function VotingExperience({
             (finalist) =>
               finalist.categoryId === category.id &&
               finalist.status === "approved" &&
-              finalist.nomineeId !== currentUser.member.id,
+              finalist.nomineeId !== currentUser.member.id &&
+              eligibleMemberIds.has(finalist.nomineeId),
           );
 
           return (
@@ -523,6 +539,7 @@ export function MemberAwardsPage({
   model: AwardPortalModel;
 }) {
   const access = getMemberPhaseAccess(model.cycle.stage);
+  const canParticipate = currentUser.member.awardsEligible !== false;
 
   return (
     <main className="app-shell">
@@ -535,9 +552,18 @@ export function MemberAwardsPage({
         </div>
         <ProfilePill currentUser={currentUser} />
       </section>
-      {access.canNominate ? <NominationExperience currentUser={currentUser} model={model} /> : null}
-      {access.canVote ? <VotingExperience currentUser={currentUser} model={model} /> : null}
-      {!access.canNominate && !access.canVote ? (
+      {!canParticipate ? (
+        <section className="panel">
+          <EmptyState message="You are not currently included in this awards run." />
+        </section>
+      ) : null}
+      {canParticipate && access.canNominate ? (
+        <NominationExperience currentUser={currentUser} model={model} />
+      ) : null}
+      {canParticipate && access.canVote ? (
+        <VotingExperience currentUser={currentUser} model={model} />
+      ) : null}
+      {canParticipate && !access.canNominate && !access.canVote ? (
         <section className="panel">
           <EmptyState message={access.message} />
         </section>
@@ -560,6 +586,37 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
     });
   }
 
+  function updateMemberEligibility(memberId: string, awardsEligible: boolean) {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await updateMemberEligibilityAction({
+        awardsEligible,
+        memberId,
+      })) as PortalResult;
+      setMessage(
+        result.ok
+          ? awardsEligible
+            ? "Member can participate."
+            : "Member excluded from this run."
+          : result.error ?? "Unable to update member.",
+      );
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function bulkUpdateEligibility(awardsEligible: boolean) {
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await bulkUpdateMemberEligibilityAction({ awardsEligible })) as PortalResult;
+      setMessage(
+        result.ok
+          ? `${result.count ?? 0} members ${awardsEligible ? "enabled" : "excluded"}.`
+          : result.error ?? "Unable to update members.",
+      );
+      if (result.ok) router.refresh();
+    });
+  }
+
   return (
     <section className="panel roster-panel">
       <div className="panel-head">
@@ -567,9 +624,27 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Clerk roster</p>
           <h2>Members</h2>
         </div>
-        <button className="secondary-action" disabled={pending} onClick={syncRoster} type="button">
-          {pending ? "Syncing" : "Sync"}
-        </button>
+        <div className="row-actions">
+          <button
+            className="secondary-action"
+            disabled={pending}
+            onClick={() => bulkUpdateEligibility(true)}
+            type="button"
+          >
+            Enable all
+          </button>
+          <button
+            className="secondary-action"
+            disabled={pending}
+            onClick={() => bulkUpdateEligibility(false)}
+            type="button"
+          >
+            Disable all
+          </button>
+          <button className="secondary-action" disabled={pending} onClick={syncRoster} type="button">
+            {pending ? "Syncing" : "Sync members"}
+          </button>
+        </div>
       </div>
       <div className="people-list admin-roster-list">
         {model.members.map((member) => (
@@ -579,6 +654,15 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
               <strong>{member.name}</strong>
               <small>{member.email}</small>
             </span>
+            <label className="participation-switch">
+              <input
+                checked={member.awardsEligible !== false}
+                disabled={pending}
+                onChange={(event) => updateMemberEligibility(member.id, event.target.checked)}
+                type="checkbox"
+              />
+              <span>{member.awardsEligible !== false ? "Eligible" : "Excluded"}</span>
+            </label>
           </div>
         ))}
       </div>
@@ -614,6 +698,29 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
       const result = (await publishWinnersAction(model.cycle.id)) as PortalResult;
 
       setMessage(result.ok ? "Winners published." : result.error ?? "Unable to publish winners.");
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function resetAwardsRun() {
+    const confirmed = window.confirm(
+      "Reset this awards run? This clears nominations, finalists, votes, receipts, certifications, and published results for the current cycle. Members, categories, photos, and admin access stay intact.",
+    );
+
+    if (!confirmed) return;
+
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await resetAwardsRunAction({
+        confirmed: true,
+        cycleId: model.cycle.id,
+      })) as PortalResult;
+
+      setMessage(
+        result.ok
+          ? `Awards run reset. ${result.count ?? 0} members enabled.`
+          : result.error ?? "Unable to reset awards run.",
+      );
       if (result.ok) router.refresh();
     });
   }
@@ -673,6 +780,9 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
           type="button"
         >
           {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
+        </button>
+        <button className="danger-action" disabled={pending} onClick={resetAwardsRun} type="button">
+          Reset awards run
         </button>
       </div>
       {message ? <div className="notice">{message}</div> : null}

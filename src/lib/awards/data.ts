@@ -12,6 +12,7 @@ export type Member = {
   email: string;
   chapter: string;
   status: "active" | "inactive";
+  awardsEligible: boolean;
   joined: string;
   photoUrl?: string | null;
 };
@@ -93,6 +94,7 @@ export const awardModel = {
       email: "ari@cpa.example",
       chapter: "North",
       status: "active",
+      awardsEligible: true,
       joined: "2019",
     },
     {
@@ -101,6 +103,7 @@ export const awardModel = {
       email: "blair@cpa.example",
       chapter: "Central",
       status: "active",
+      awardsEligible: true,
       joined: "2017",
     },
     {
@@ -109,6 +112,7 @@ export const awardModel = {
       email: "casey@cpa.example",
       chapter: "West",
       status: "active",
+      awardsEligible: true,
       joined: "2021",
     },
     {
@@ -117,6 +121,7 @@ export const awardModel = {
       email: "devon@cpa.example",
       chapter: "South",
       status: "active",
+      awardsEligible: true,
       joined: "2016",
     },
     {
@@ -125,6 +130,7 @@ export const awardModel = {
       email: "elliot@cpa.example",
       chapter: "East",
       status: "inactive",
+      awardsEligible: false,
       joined: "2020",
     },
   ] satisfies Member[],

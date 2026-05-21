@@ -4,7 +4,9 @@ function findMember(members, memberId) {
 
 function activeMember(members, memberId) {
   const member = findMember(members, memberId);
-  return member && member.status === "active" ? member : null;
+  return member && member.status === "active" && member.awardsEligible !== false
+    ? member
+    : null;
 }
 
 function nominationCountForNominator(existingNominations, categoryId, nominatorId) {
@@ -28,6 +30,7 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
 
   return members
     .filter((member) => member.status === "active")
+    .filter((member) => member.awardsEligible !== false)
     .filter((member) => member.id !== currentMemberId)
     .filter((member) => {
       if (!normalizedQuery) return true;
@@ -191,7 +194,7 @@ export function suggestFinalists({ members, category, nominations }) {
         nomineeId,
         displayName: member?.name ?? "Unknown member",
         nominationCount,
-        eligible: member?.status === "active",
+        eligible: member?.status === "active" && member.awardsEligible !== false,
       };
     })
     .filter((suggestion) => suggestion.eligible)
@@ -256,20 +259,43 @@ export function createVoteReceipt({
   };
 }
 
-export function validateBallotSelections({ categories, currentMemberId, finalists, selections }) {
+export function validateBallotSelections({
+  categories,
+  currentMemberId,
+  finalists,
+  members,
+  selections,
+}) {
+  const eligibleMemberIds =
+    members?.length > 0
+      ? new Set(
+          members
+            .filter(
+              (member) =>
+                member.status !== "inactive" && member.awardsEligible !== false,
+            )
+            .map((member) => member.id),
+        )
+      : null;
   const approvedFinalists = finalists.filter((finalist) => finalist.status === "approved");
   const approvedFinalistById = new Map(
     approvedFinalists.map((finalist) => [finalist.id, finalist]),
   );
-  const visibleApprovedFinalists = currentMemberId
-    ? approvedFinalists.filter((finalist) => finalist.nomineeId !== currentMemberId)
-    : approvedFinalists;
+  const visibleApprovedFinalists = approvedFinalists.filter(
+    (finalist) =>
+      (!currentMemberId || finalist.nomineeId !== currentMemberId) &&
+      (!eligibleMemberIds || eligibleMemberIds.has(finalist.nomineeId)),
+  );
 
   for (const finalistId of Object.values(selections)) {
     const finalist = approvedFinalistById.get(finalistId);
 
     if (currentMemberId && finalist?.nomineeId === currentMemberId) {
       return { ok: false, reason: "SELF_VOTE_NOT_ALLOWED" };
+    }
+
+    if (finalist && eligibleMemberIds && !eligibleMemberIds.has(finalist.nomineeId)) {
+      return { ok: false, reason: "INVALID_FINALIST_SELECTION" };
     }
   }
 
@@ -297,7 +323,8 @@ export function validateBallotSelections({ categories, currentMemberId, finalist
     if (
       !finalist ||
       finalist.categoryId !== categoryId ||
-      (currentMemberId && finalist.nomineeId === currentMemberId)
+      (currentMemberId && finalist.nomineeId === currentMemberId) ||
+      (eligibleMemberIds && !eligibleMemberIds.has(finalist.nomineeId))
     ) {
       return { ok: false, reason: "INVALID_FINALIST_SELECTION" };
     }

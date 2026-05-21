@@ -87,6 +87,36 @@ describe("nomination validation", () => {
       "CATEGORY_NOMINATION_LIMIT_REACHED",
     );
   });
+
+  it("rejects excluded nominators and nominees", () => {
+    const roster = [
+      { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, status: "active" },
+      { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, status: "active" },
+      { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, status: "active" },
+    ];
+
+    assert.equal(
+      validateNomination({
+        members: roster,
+        category,
+        existingNominations: [],
+        nominatorId: "mem-2",
+        nomineeId: "mem-4",
+      }).reason,
+      "NOMINATOR_NOT_ACTIVE_MEMBER",
+    );
+
+    assert.equal(
+      validateNomination({
+        members: roster,
+        category,
+        existingNominations: [],
+        nominatorId: "mem-1",
+        nomineeId: "mem-2",
+      }).reason,
+      "NOMINEE_NOT_ACTIVE_MEMBER",
+    );
+  });
 });
 
 describe("nomination directory", () => {
@@ -95,6 +125,25 @@ describe("nomination directory", () => {
       currentMemberId: "mem-1",
       members,
       query: "ari",
+    });
+
+    assert.deepEqual(directory, []);
+  });
+
+  it("filters excluded members out of nomination search results", () => {
+    const directory = buildNominationDirectory({
+      currentMemberId: "mem-1",
+      members: [
+        ...members,
+        {
+          id: "mem-5",
+          name: "Excluded Member",
+          email: "excluded@cpa.test",
+          awardsEligible: false,
+          status: "active",
+        },
+      ],
+      query: "excluded",
     });
 
     assert.deepEqual(directory, []);
@@ -242,6 +291,25 @@ describe("finalist workflow", () => {
     assert.equal(finalists.length, 3);
     assert.ok(finalists.every((finalist) => finalist.status === "approved"));
   });
+
+  it("does not suggest excluded nominees as finalists", () => {
+    const suggestions = suggestFinalists({
+      members: [
+        { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, status: "active" },
+        { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, status: "active" },
+      ],
+      category,
+      nominations: [
+        { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
+        { id: "nom-2", categoryId: category.id, nomineeId: "mem-1", nominatorId: "mem-2" },
+      ],
+    });
+
+    assert.deepEqual(
+      suggestions.map((suggestion) => suggestion.nomineeId),
+      ["mem-1"],
+    );
+  });
 });
 
 describe("category setup", () => {
@@ -373,6 +441,48 @@ describe("anonymous voting", () => {
         categories: [communityCategory],
         currentMemberId: "mem-1",
         finalists: approvedFinalists,
+        selections: {
+          [communityCategory.id]: "fin-peer",
+        },
+      }),
+      { ok: true, categoryIds: [communityCategory.id] },
+    );
+  });
+
+  it("rejects a finalist selection for an excluded nominee", () => {
+    const communityCategory = { id: "cat-community", active: true, title: "Community" };
+    const approvedFinalists = [
+      { id: "fin-excluded", categoryId: communityCategory.id, nomineeId: "mem-2", status: "approved" },
+      { id: "fin-peer", categoryId: communityCategory.id, nomineeId: "mem-4", status: "approved" },
+    ];
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory],
+        currentMemberId: "mem-1",
+        finalists: approvedFinalists,
+        members: [
+          { id: "mem-1", awardsEligible: true, status: "active" },
+          { id: "mem-2", awardsEligible: false, status: "active" },
+          { id: "mem-4", awardsEligible: true, status: "active" },
+        ],
+        selections: {
+          [communityCategory.id]: "fin-excluded",
+        },
+      }),
+      { ok: false, reason: "INVALID_FINALIST_SELECTION" },
+    );
+
+    assert.deepEqual(
+      validateBallotSelections({
+        categories: [communityCategory],
+        currentMemberId: "mem-1",
+        finalists: approvedFinalists,
+        members: [
+          { id: "mem-1", awardsEligible: true, status: "active" },
+          { id: "mem-2", awardsEligible: false, status: "active" },
+          { id: "mem-4", awardsEligible: true, status: "active" },
+        ],
         selections: {
           [communityCategory.id]: "fin-peer",
         },

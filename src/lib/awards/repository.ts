@@ -179,6 +179,7 @@ export async function getPortalData(
       id: member.id,
       joined: member.joinedYear ?? "",
       name: member.name,
+      awardsEligible: member.awardsEligible,
       photoUrl: member.photoUrl,
       status: member.status,
     }),

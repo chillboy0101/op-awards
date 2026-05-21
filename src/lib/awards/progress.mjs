@@ -1,5 +1,10 @@
 function activeItems(items) {
-  return items.filter((item) => item.active !== false && item.status !== "inactive");
+  return items.filter(
+    (item) =>
+      item.active !== false &&
+      item.status !== "inactive" &&
+      item.awardsEligible !== false,
+  );
 }
 
 function countUnique(values) {

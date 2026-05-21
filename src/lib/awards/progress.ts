@@ -21,6 +21,7 @@ type ProgressFinalist = {
 
 type ProgressMember = {
   active?: boolean;
+  awardsEligible?: boolean;
   id: string;
   status?: string;
 };

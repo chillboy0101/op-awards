@@ -21,6 +21,7 @@ export type CurrentUser = {
     name: string;
     email: string;
     chapter: string;
+    awardsEligible: boolean;
     photoUrl: string | null;
   };
   role: "member" | "reviewer" | "admin";
@@ -49,6 +50,7 @@ export function demoCurrentUser(): CurrentUser {
       name: "Ari Morgan",
       email: "ari@cpa.example",
       chapter: "North",
+      awardsEligible: true,
       photoUrl: null,
     },
     role: "admin",
@@ -193,6 +195,7 @@ export async function getCurrentUserFromToken(sessionToken: string | undefined) 
       name: member.name,
       email: member.email,
       chapter: member.chapter,
+      awardsEligible: member.awardsEligible,
       photoUrl: member.photoUrl,
     },
     role,

@@ -5,6 +5,7 @@ import { getDb, hasDatabaseUrl, schema } from "@/db";
 import type { CurrentUser } from "@/lib/auth/service";
 import { getAllowedClerkOrgId, hasClerkConfig } from "@/lib/auth/clerk-config";
 import { getCpaAwardsRole } from "@/lib/auth/clerk-access";
+import { buildClerkMemberValues } from "@/lib/auth/clerk-member-sync.mjs";
 
 type ClerkMemberProfile = {
   clerkUserId: string;
@@ -39,6 +40,7 @@ function memberFromRow(row: MemberRow): CurrentUser["member"] {
     email: row.email,
     id: row.id,
     name: row.name,
+    awardsEligible: row.awardsEligible,
     photoUrl: row.photoUrl,
   };
 }
@@ -57,13 +59,11 @@ async function upsertClerkMember(profile: ClerkMemberProfile) {
     .limit(1);
 
   if (existing) {
+    const values = buildClerkMemberValues({ existing, profile });
     const [updated] = await db
       .update(schema.members)
       .set({
-        clerkUserId: profile.clerkUserId,
-        email: profile.email,
-        name: profile.name,
-        photoUrl: profile.photoUrl,
+        ...values,
         status: "active",
         updatedAt: new Date(),
       })
@@ -81,6 +81,7 @@ async function upsertClerkMember(profile: ClerkMemberProfile) {
       email: profile.email,
       name: profile.name,
       photoUrl: profile.photoUrl,
+      awardsEligible: true,
       status: "active",
     })
     .returning();
@@ -112,6 +113,7 @@ export async function syncCurrentClerkMember({
         email,
         id: userId,
         name: fullName({ email, firstName, lastName }),
+        awardsEligible: true,
         photoUrl: imageUrl || null,
       },
       role,

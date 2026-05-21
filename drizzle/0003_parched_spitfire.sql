@@ -1,0 +1,1 @@
+ALTER TABLE "members" ADD COLUMN "awards_eligible" boolean DEFAULT true NOT NULL;

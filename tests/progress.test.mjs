@@ -81,4 +81,31 @@ describe("cycle completion progress", () => {
     assert.equal(progress.approvedCategoryCount, 1);
     assert.equal(progress.voteReceiptCount, 2);
   });
+
+  it("counts only members currently eligible to participate", () => {
+    const progress = getCycleProgress({
+      categories,
+      members: [
+        { id: "mem-1", awardsEligible: true, status: "active" },
+        { id: "mem-2", awardsEligible: false, status: "active" },
+        { id: "mem-3", awardsEligible: true, status: "inactive" },
+      ],
+      nominations: [
+        { categoryId: "cat-1", nominatorId: "mem-1" },
+        { categoryId: "cat-2", nominatorId: "mem-1" },
+        { categoryId: "cat-1", nominatorId: "mem-2" },
+        { categoryId: "cat-2", nominatorId: "mem-2" },
+      ],
+      voteReceipts: [
+        { memberId: "mem-1", ballotScope: "main" },
+        { memberId: "mem-2", ballotScope: "main" },
+      ],
+    });
+
+    assert.equal(progress.eligibleMemberCount, 1);
+    assert.equal(progress.nominationCompletionCount, 1);
+    assert.equal(progress.nominationsRequiredCount, 2);
+    assert.equal(progress.voteReceiptCount, 1);
+    assert.equal(progress.votingRequiredCount, 1);
+  });
 });

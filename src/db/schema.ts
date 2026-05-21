@@ -51,6 +51,7 @@ export const members = pgTable(
     email: text("email").notNull(),
     chapter: text("chapter").notNull().default("General"),
     status: memberStatus("status").notNull().default("active"),
+    awardsEligible: boolean("awards_eligible").notNull().default(true),
     joinedYear: text("joined_year"),
     photoUrl: text("photo_url"),
     photoAssetId: text("photo_asset_id"),

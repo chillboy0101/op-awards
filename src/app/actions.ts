@@ -53,6 +53,20 @@ const memberSchema = z.object({
   status: z.enum(["active", "inactive"]),
 });
 
+const memberEligibilitySchema = z.object({
+  awardsEligible: z.boolean(),
+  memberId: z.string().min(1),
+});
+
+const bulkMemberEligibilitySchema = z.object({
+  awardsEligible: z.boolean(),
+});
+
+const resetAwardsRunSchema = z.object({
+  confirmed: z.literal(true),
+  cycleId: z.string().min(1),
+});
+
 const categorySetupSchema = z.object({
   active: z.boolean().default(true),
   categoryId: z.string().optional(),
@@ -441,6 +455,9 @@ export async function createNominationsAction(input: unknown) {
   const user = await getCurrentUser();
 
   if (!user) return { ok: false, error: "Authentication required." };
+  if (!user.member.awardsEligible) {
+    return { ok: false, error: "You are not currently eligible for this awards run." };
+  }
 
   const parsed = nominationBatchSchema.safeParse(input);
 
@@ -531,6 +548,9 @@ export async function submitBallotAction(input: unknown) {
   const user = await getCurrentUser();
 
   if (!user) return { ok: false, error: "Authentication required." };
+  if (!user.member.awardsEligible) {
+    return { ok: false, error: "You are not currently eligible for this awards run." };
+  }
 
   const parsed = ballotSchema.safeParse(input);
 
@@ -558,9 +578,10 @@ export async function submitBallotAction(input: unknown) {
   if (!cycle) return { ok: false, error: "Voting is not open." };
   if (categoryIds.length === 0) return { ok: false, error: "Select one finalist per category." };
 
-  const [cycleCategories, finalists, progress] = await Promise.all([
+  const [cycleCategories, finalists, members, progress] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
     db.select().from(schema.finalists),
+    db.select().from(schema.members).where(eq(schema.members.status, "active")),
     getCycleCompletionProgress(cycle.id, ballotScope),
   ]);
   const scopeCategories = cycleCategories.filter(
@@ -579,6 +600,7 @@ export async function submitBallotAction(input: unknown) {
     categories: scopeCategories,
     currentMemberId: user.member.id,
     finalists: approvedFinalists,
+    members,
     selections: parsed.data.selections,
   });
 
@@ -961,6 +983,166 @@ export async function syncClerkRosterAction() {
   revalidateAwardPages();
 
   return { ok: true, count: members.length };
+}
+
+export async function updateMemberEligibilityAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = memberEligibilitySchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Choose a valid member." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const [member] = await getDb()
+    .update(schema.members)
+    .set({
+      awardsEligible: parsed.data.awardsEligible,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.members.id, parsed.data.memberId))
+    .returning();
+
+  if (!member) return { ok: false, error: "Member not found." };
+
+  await getDb().insert(schema.auditEvents).values({
+    action: "update_member_participation",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: member.id,
+    summary: `${member.name} ${member.awardsEligible ? "can participate" : "was excluded"} for this awards run.`,
+    metadata: { awardsEligible: member.awardsEligible },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, awardsEligible: member.awardsEligible };
+}
+
+export async function bulkUpdateMemberEligibilityAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = bulkMemberEligibilitySchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Choose a valid participation state." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true, count: 0 };
+
+  const members = await getDb()
+    .update(schema.members)
+    .set({
+      awardsEligible: parsed.data.awardsEligible,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.members.status, "active"))
+    .returning();
+
+  await getDb().insert(schema.auditEvents).values({
+    action: "bulk_update_member_participation",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: "members",
+    summary: `${members.length} members ${parsed.data.awardsEligible ? "enabled" : "excluded"} for this awards run.`,
+    metadata: { awardsEligible: parsed.data.awardsEligible, count: members.length },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, count: members.length };
+}
+
+export async function resetAwardsRunAction(input: unknown) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  const parsed = resetAwardsRunSchema.safeParse(input);
+
+  if (!parsed.success) return { ok: false, error: "Confirm the reset before continuing." };
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const db = getDb();
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, parsed.data.cycleId))
+    .limit(1);
+
+  if (!cycle) return { ok: false, error: "Awards cycle not found." };
+
+  const cycleCategories = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.cycleId, cycle.id));
+  const categoryIds = cycleCategories.map((category) => category.id);
+
+  if (categoryIds.length > 0) {
+    await db
+      .delete(schema.resultCertifications)
+      .where(inArray(schema.resultCertifications.categoryId, categoryIds));
+    await db
+      .delete(schema.anonymousVotes)
+      .where(eq(schema.anonymousVotes.cycleId, cycle.id));
+    await db
+      .delete(schema.finalists)
+      .where(inArray(schema.finalists.categoryId, categoryIds));
+  }
+
+  await db.delete(schema.voteReceipts).where(eq(schema.voteReceipts.cycleId, cycle.id));
+  await db.delete(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id));
+  await db
+    .delete(schema.categories)
+    .where(and(eq(schema.categories.cycleId, cycle.id), eq(schema.categories.kind, "runoff")));
+  const enabledMembers = await db
+    .update(schema.members)
+    .set({ awardsEligible: true, updatedAt: new Date() })
+    .where(eq(schema.members.status, "active"))
+    .returning();
+
+  await db
+    .update(schema.awardCycles)
+    .set({
+      publishedAt: null,
+      stage: "nominations",
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.awardCycles.id, cycle.id));
+
+  await db.insert(schema.auditEvents).values({
+    action: "reset_awards_run",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: cycle.id,
+    summary: "Reset awards activity and enabled all active members.",
+    metadata: {
+      categories: categoryIds.length,
+      enabledMembers: enabledMembers.length,
+    },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, count: enabledMembers.length };
 }
 
 export async function updateCycleStageAction(input: unknown) {
