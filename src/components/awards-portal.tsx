@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -63,6 +64,7 @@ type PortalResult = {
   confirmationCode?: string;
   awardsEligible?: boolean;
 };
+type CelebrationMotionStyle = CSSProperties & Record<`--${string}`, string>;
 
 function useAutoDismissMessage(
   message: string | null,
@@ -79,8 +81,75 @@ function useAutoDismissMessage(
 }
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-const CONFETTI_PIECES = Array.from({ length: 34 }, (_, index) => index + 1);
-const CELEBRATION_BALLOONS = Array.from({ length: 8 }, (_, index) => index + 1);
+const CELEBRATION_COLORS = ["#efc76d", "#176b60", "#8d3b5c", "#2d7fba", "#f3a83b", "#2f8f83", "#bf3f65"];
+
+function seededValue(index: number, salt: number) {
+  const value = Math.sin((index + 1) * (salt + 17.137)) * 10000;
+  return value - Math.floor(value);
+}
+
+function range(index: number, salt: number, min: number, max: number) {
+  return min + seededValue(index, salt) * (max - min);
+}
+
+function signedRange(index: number, salt: number, distance: number) {
+  return range(index, salt, -distance, distance);
+}
+
+function fixed(value: number, precision = 2) {
+  return value.toFixed(precision);
+}
+
+const CONFETTI_PIECES = Array.from({ length: 64 }, (_, index) => {
+  const color = CELEBRATION_COLORS[Math.floor(seededValue(index, 8) * CELEBRATION_COLORS.length)];
+  const style: CelebrationMotionStyle = {
+    "--confetti-x1": `${fixed(signedRange(index, 1, 72))}px`,
+    "--confetti-x2": `${fixed(signedRange(index, 2, 118))}px`,
+    "--confetti-x3": `${fixed(signedRange(index, 3, 92))}px`,
+    "--confetti-x4": `${fixed(signedRange(index, 4, 132))}px`,
+    "--confetti-x5": `${fixed(signedRange(index, 5, 150))}px`,
+    "--confetti-rot1": `${fixed(range(index, 9, 70, 280), 0)}deg`,
+    "--confetti-rot2": `${fixed(range(index, 10, 280, 650), 0)}deg`,
+    "--confetti-rot3": `${fixed(range(index, 11, 650, 980), 0)}deg`,
+    "--confetti-rot4": `${fixed(range(index, 12, 980, 1320), 0)}deg`,
+    "--confetti-rot5": `${fixed(range(index, 13, 1320, 1820), 0)}deg`,
+    "--piece-color": color,
+    "--piece-delay": `${fixed(-range(index, 14, 0, 10.8))}s`,
+    "--piece-duration": `${fixed(range(index, 15, 5.8, 11.4))}s`,
+    "--piece-height": `${fixed(range(index, 16, 10, 25))}px`,
+    "--piece-left": `${fixed(range(index, 17, -4, 104))}vw`,
+    "--piece-radius": `${fixed(range(index, 18, 2, 9))}px`,
+    "--piece-width": `${fixed(range(index, 19, 5, 11))}px`,
+  };
+
+  return { id: index + 1, style };
+});
+
+const CELEBRATION_BALLOONS = Array.from({ length: 10 }, (_, index) => {
+  const width = range(index, 23, 34, 56);
+  const color = CELEBRATION_COLORS[Math.floor(seededValue(index, 24) * CELEBRATION_COLORS.length)];
+  const style: CelebrationMotionStyle = {
+    "--balloon-color": color,
+    "--balloon-delay": `${fixed(-range(index, 25, 0, 10.2))}s`,
+    "--balloon-duration": `${fixed(range(index, 26, 10.5, 16.5))}s`,
+    "--balloon-height": `${fixed(width * range(index, 27, 1.22, 1.34))}px`,
+    "--balloon-left": `${fixed(range(index, 28, 3, 96))}vw`,
+    "--balloon-r0": `${fixed(signedRange(index, 29, 4))}deg`,
+    "--balloon-r1": `${fixed(signedRange(index, 30, 11))}deg`,
+    "--balloon-r2": `${fixed(signedRange(index, 31, 13))}deg`,
+    "--balloon-r3": `${fixed(signedRange(index, 32, 9))}deg`,
+    "--balloon-r4": `${fixed(signedRange(index, 33, 12))}deg`,
+    "--balloon-r5": `${fixed(signedRange(index, 34, 8))}deg`,
+    "--balloon-width": `${fixed(width)}px`,
+    "--balloon-x1": `${fixed(signedRange(index, 35, 38))}px`,
+    "--balloon-x2": `${fixed(signedRange(index, 36, 62))}px`,
+    "--balloon-x3": `${fixed(signedRange(index, 37, 78))}px`,
+    "--balloon-x4": `${fixed(signedRange(index, 38, 96))}px`,
+    "--balloon-x5": `${fixed(signedRange(index, 39, 84))}px`,
+  };
+
+  return { id: index + 1, style };
+});
 
 function initials(name: string) {
   return name
@@ -214,10 +283,10 @@ function FullPageConfetti() {
   return (
     <div className="confetti-overlay" aria-hidden="true">
       {CONFETTI_PIECES.map((piece) => (
-        <span className="confetti-piece" key={piece} />
+        <span className="confetti-piece" key={piece.id} style={piece.style} />
       ))}
       {CELEBRATION_BALLOONS.map((balloon) => (
-        <span className={`celebration-balloon celebration-balloon-${balloon}`} key={`balloon-${balloon}`} />
+        <span className="celebration-balloon" key={`balloon-${balloon.id}`} style={balloon.style} />
       ))}
     </div>
   );
@@ -829,7 +898,7 @@ export function MemberAwardsPage({
       {canParticipate && access.canVote ? (
         <VotingExperience model={model} />
       ) : null}
-      {canParticipate && !access.canNominate && !access.canVote ? (
+      {canParticipate && !access.canNominate && !access.canVote && model.cycle.stage !== "Published" ? (
         <section className="panel">
           <EmptyState message={access.message} />
         </section>
