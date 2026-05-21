@@ -11,7 +11,10 @@ import {
   createRunoffCategory,
   createVoteReceipt,
   formatCategoryVotingSummary,
+  getIncompleteBallotCategoryTitles,
+  getResetCategoryIds,
   getUnresolvedTieCategoryIds,
+  groupNominationsByNominator,
   recordAnonymousVotes,
   suggestFinalists,
   validateNominationBatch,
@@ -47,16 +50,16 @@ describe("nomination validation", () => {
     assert.deepEqual(result, { ok: true });
   });
 
-  it("rejects self-nominations, inactive nominees, and duplicate category nominations", () => {
-    assert.equal(
+  it("allows self-nominations but still rejects inactive nominees and duplicate category nominations", () => {
+    assert.deepEqual(
       validateNomination({
         members,
         category,
         existingNominations: [],
         nominatorId: "mem-1",
         nomineeId: "mem-1",
-      }).reason,
-      "SELF_NOMINATION_NOT_ALLOWED",
+      }),
+      { ok: true },
     );
 
     assert.equal(
@@ -121,14 +124,21 @@ describe("nomination validation", () => {
 });
 
 describe("nomination directory", () => {
-  it("filters the signed-in member out of nomination search results", () => {
+  it("includes the signed-in member as a selectable nomination candidate", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",
       members,
       query: "ari",
     });
 
-    assert.deepEqual(directory, []);
+    assert.deepEqual(
+      directory.map((member) => ({
+        id: member.id,
+        isSelf: member.isSelf,
+        selectable: member.selectable,
+      })),
+      [{ id: "mem-1", isSelf: true, selectable: true }],
+    );
   });
 
   it("filters excluded members out of nomination search results", () => {
@@ -187,6 +197,28 @@ describe("nomination ballot", () => {
         nominations: [
           { categoryId: "cat-leadership", nomineeId: "mem-2", statement: "" },
           { categoryId: "cat-service", nomineeId: "mem-4", statement: "Helpful during clinics" },
+        ],
+      },
+    );
+  });
+
+  it("accepts self-selection inside a complete nomination ballot", () => {
+    assert.deepEqual(
+      validateNominationBatch({
+        categories,
+        existingNominations: [],
+        members,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-1", statement: "Leading the work" },
+          { categoryId: "cat-service", nomineeId: "mem-4", statement: "" },
+        ],
+        nominatorId: "mem-1",
+      }),
+      {
+        ok: true,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-1", statement: "Leading the work" },
+          { categoryId: "cat-service", nomineeId: "mem-4", statement: "" },
         ],
       },
     );
@@ -313,6 +345,79 @@ describe("finalist workflow", () => {
   });
 });
 
+describe("admin nomination review", () => {
+  it("groups a member's complete nomination ballot into one review card", () => {
+    const groups = groupNominationsByNominator({
+      categories: [
+        { id: "cat-service", title: "Member Service" },
+        { id: "cat-leadership", title: "Leadership Excellence" },
+      ],
+      members,
+      nominations: [
+        {
+          id: "nom-1",
+          categoryId: "cat-leadership",
+          nomineeId: "mem-2",
+          nominatorId: "mem-1",
+          statement: "Strong leadership",
+        },
+        {
+          id: "nom-2",
+          categoryId: "cat-service",
+          nomineeId: "mem-4",
+          nominatorId: "mem-1",
+          statement: "",
+        },
+        {
+          id: "nom-3",
+          categoryId: "cat-service",
+          nomineeId: "mem-1",
+          nominatorId: "mem-2",
+          statement: "Reliable support",
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      groups.map((group) => ({
+        nominatorName: group.nominatorName,
+        nominations: group.nominations.map((nomination) => ({
+          categoryTitle: nomination.categoryTitle,
+          nomineeName: nomination.nomineeName,
+          statement: nomination.statement,
+        })),
+      })),
+      [
+        {
+          nominatorName: "Ari Morgan",
+          nominations: [
+            {
+              categoryTitle: "Member Service",
+              nomineeName: "Devon Patel",
+              statement: "",
+            },
+            {
+              categoryTitle: "Leadership Excellence",
+              nomineeName: "Blair Chen",
+              statement: "Strong leadership",
+            },
+          ],
+        },
+        {
+          nominatorName: "Blair Chen",
+          nominations: [
+            {
+              categoryTitle: "Member Service",
+              nomineeName: "Ari Morgan",
+              statement: "Reliable support",
+            },
+          ],
+        },
+      ],
+    );
+  });
+});
+
 describe("category setup", () => {
   it("describes only how many nominees move to voting", () => {
     assert.equal(
@@ -377,6 +482,16 @@ describe("category setup", () => {
       "INVALID_CATEGORY_SETUP",
     );
   });
+
+  it("marks standard and runoff categories for deletion during awards run reset", () => {
+    assert.deepEqual(
+      getResetCategoryIds([
+        { id: "cat-main", kind: "standard" },
+        { id: "cat-runoff", kind: "runoff" },
+      ]),
+      ["cat-main", "cat-runoff"],
+    );
+  });
 });
 
 describe("anonymous voting", () => {
@@ -429,7 +544,7 @@ describe("anonymous voting", () => {
     );
   });
 
-  it("rejects a finalist selection for the signed-in member", () => {
+  it("accepts a finalist selection for the signed-in member", () => {
     const communityCategory = { id: "cat-community", active: true, title: "Community" };
     const approvedFinalists = [
       { id: "fin-self", categoryId: communityCategory.id, nomineeId: "mem-1", status: "approved" },
@@ -445,7 +560,7 @@ describe("anonymous voting", () => {
           [communityCategory.id]: "fin-self",
         },
       }),
-      { ok: false, reason: "SELF_VOTE_NOT_ALLOWED" },
+      { ok: true, categoryIds: [communityCategory.id] },
     );
 
     assert.deepEqual(
@@ -500,6 +615,22 @@ describe("anonymous voting", () => {
         },
       }),
       { ok: true, categoryIds: [communityCategory.id] },
+    );
+  });
+
+  it("names incomplete ballot categories for guided voting feedback", () => {
+    assert.deepEqual(
+      getIncompleteBallotCategoryTitles({
+        categories: [
+          { id: "cat-community", active: true, title: "Community" },
+          { id: "cat-service", active: true, title: "Service" },
+          { id: "cat-hidden", active: false, title: "Hidden" },
+        ],
+        selections: {
+          "cat-community": "fin-1",
+        },
+      }),
+      ["Service"],
     );
   });
 

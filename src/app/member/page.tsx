@@ -6,15 +6,14 @@ import { getPortalData } from "@/lib/awards/repository";
 import { hasClerkConfig } from "@/lib/auth/clerk-config";
 
 export default async function MemberPage() {
-  const [model, currentUser] = await Promise.all([
-    getPortalData(),
-    getCurrentUser(),
-  ]);
+  const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     if (hasClerkConfig()) redirect("/sign-in");
     redirect("/");
   }
+
+  const model = await getPortalData({ currentMemberId: currentUser.member.id });
 
   return <MemberAwardsPage currentUser={currentUser} model={model} />;
 }

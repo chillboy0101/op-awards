@@ -31,7 +31,6 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
   return members
     .filter((member) => member.status === "active")
     .filter((member) => member.awardsEligible !== false)
-    .filter((member) => member.id !== currentMemberId)
     .filter((member) => {
       if (!normalizedQuery) return true;
 
@@ -45,7 +44,7 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
       return {
         ...member,
         isSelf,
-        selectable: !isSelf,
+        selectable: true,
       };
     })
     .sort((left, right) => {
@@ -74,6 +73,67 @@ export function formatCategoryVotingSummary(category) {
   const verb = finalistLimit === 1 ? "moves" : "move";
 
   return `${finalistLimit} ${nomineeLabel} ${verb} to voting`;
+}
+
+export function getResetCategoryIds(categories) {
+  return categories.map((category) => category.id).filter(Boolean);
+}
+
+export function getIncompleteBallotCategoryTitles(input) {
+  const categories = input?.categories ?? [];
+  const selections = input?.selections ?? {};
+
+  return categories
+    .filter((category) => category.active !== false)
+    .filter((category) => !selections[category.id])
+    .map((category) => category.title ?? "Untitled category");
+}
+
+export function groupNominationsByNominator(input) {
+  const categories = input?.categories ?? [];
+  const members = input?.members ?? [];
+  const nominations = input?.nominations ?? [];
+  const categoryOrder = new Map(categories.map((category, index) => [category.id, index]));
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const memberById = new Map(members.map((member) => [member.id, member]));
+  const groups = new Map();
+
+  for (const nomination of nominations) {
+    const nominator = memberById.get(nomination.nominatorId);
+    const nominee = memberById.get(nomination.nomineeId);
+    const category = categoryById.get(nomination.categoryId);
+    const group = groups.get(nomination.nominatorId) ?? {
+      nominator,
+      nominatorId: nomination.nominatorId,
+      nominatorName: nominator?.name ?? "Member",
+      nominations: [],
+    };
+
+    group.nominations.push({
+      categoryId: nomination.categoryId,
+      categoryTitle: category?.title ?? "Category",
+      id: nomination.id,
+      nominee,
+      nomineeId: nomination.nomineeId,
+      nomineeName: nominee?.name ?? "Nominee",
+      statement: compactText(nomination.statement),
+      status: nomination.status,
+    });
+    groups.set(nomination.nominatorId, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      nominations: group.nominations.sort((left, right) => {
+        const leftIndex = categoryOrder.get(left.categoryId) ?? Number.MAX_SAFE_INTEGER;
+        const rightIndex = categoryOrder.get(right.categoryId) ?? Number.MAX_SAFE_INTEGER;
+
+        if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+        return left.categoryTitle.localeCompare(right.categoryTitle);
+      }),
+    }))
+    .sort((left, right) => left.nominatorName.localeCompare(right.nominatorName));
 }
 
 export function validateCategorySetup(input) {
@@ -112,10 +172,6 @@ export function validateNomination({
 
   if (!activeMember(members, nomineeId)) {
     return { ok: false, reason: "NOMINEE_NOT_ACTIVE_MEMBER" };
-  }
-
-  if (nominatorId === nomineeId) {
-    return { ok: false, reason: "SELF_NOMINATION_NOT_ALLOWED" };
   }
 
   const nominationLimit = category.nominationLimit ?? 1;
@@ -269,7 +325,6 @@ export function createVoteReceipt({
 
 export function validateBallotSelections({
   categories,
-  currentMemberId,
   finalists,
   members,
   selections,
@@ -291,16 +346,11 @@ export function validateBallotSelections({
   );
   const visibleApprovedFinalists = approvedFinalists.filter(
     (finalist) =>
-      (!currentMemberId || finalist.nomineeId !== currentMemberId) &&
       (!eligibleMemberIds || eligibleMemberIds.has(finalist.nomineeId)),
   );
 
   for (const finalistId of Object.values(selections)) {
     const finalist = approvedFinalistById.get(finalistId);
-
-    if (currentMemberId && finalist?.nomineeId === currentMemberId) {
-      return { ok: false, reason: "SELF_VOTE_NOT_ALLOWED" };
-    }
 
     if (finalist && eligibleMemberIds && !eligibleMemberIds.has(finalist.nomineeId)) {
       return { ok: false, reason: "INVALID_FINALIST_SELECTION" };
@@ -331,7 +381,6 @@ export function validateBallotSelections({
     if (
       !finalist ||
       finalist.categoryId !== categoryId ||
-      (currentMemberId && finalist.nomineeId === currentMemberId) ||
       (eligibleMemberIds && !eligibleMemberIds.has(finalist.nomineeId))
     ) {
       return { ok: false, reason: "INVALID_FINALIST_SELECTION" };

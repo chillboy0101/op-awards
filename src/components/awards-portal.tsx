@@ -4,7 +4,7 @@ import { SignOutButton } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
   approveAllFinalistsAction,
@@ -25,6 +25,8 @@ import { getMemberPhaseAccess } from "@/lib/awards/phase";
 import {
   buildNominationDirectory,
   formatCategoryVotingSummary,
+  getIncompleteBallotCategoryTitles,
+  groupNominationsByNominator,
 } from "@/lib/awards/workflow.mjs";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
 import type { AwardPortalModel } from "@/lib/awards/repository";
@@ -33,6 +35,17 @@ import type { CurrentUser } from "@/lib/auth/service";
 type VoteSelections = Record<string, string>;
 type DirectoryMember = Member & { isSelf: boolean; selectable: boolean };
 type NominationDraft = { nomineeId: string; statement: string };
+type NominationReviewGroup = {
+  nominator?: Member;
+  nominatorId: string;
+  nominatorName: string;
+  nominations: {
+    categoryTitle: string;
+    id: string;
+    nomineeName: string;
+    statement: string;
+  }[];
+};
 type HeaderNavItem = {
   active: boolean;
   href: string;
@@ -468,17 +481,13 @@ function FinalistCard({
   );
 }
 
-function VotingExperience({
-  currentUser,
-  model,
-}: {
-  currentUser: CurrentUser;
-  model: AwardPortalModel;
-}) {
+function VotingExperience({ model }: { model: AwardPortalModel }) {
   const [selections, setSelections] = useState<VoteSelections>({});
   const [receipt, setReceipt] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const memberById = useMemo(
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
@@ -494,7 +503,6 @@ function VotingExperience({
   );
   const visibleFinalists = model.finalists.filter(
     (finalist) =>
-      finalist.nomineeId !== currentUser.member.id &&
       eligibleMemberIds.has(finalist.nomineeId),
   );
   const categoriesWithFinalists = model.categories.filter((category) =>
@@ -504,12 +512,58 @@ function VotingExperience({
       (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
     ),
   );
-  const ready =
-    categoriesWithFinalists.length > 0 &&
-    categoriesWithFinalists.every((category) => selections[category.id]);
+  const safeCategoryIndex = Math.min(
+    currentCategoryIndex,
+    Math.max(categoriesWithFinalists.length - 1, 0),
+  );
+  const currentCategory = categoriesWithFinalists[safeCategoryIndex];
+  const currentFinalists = currentCategory
+    ? visibleFinalists.filter(
+        (finalist) =>
+          finalist.categoryId === currentCategory.id &&
+          finalist.status === "approved",
+      )
+    : [];
+  const completedCount = categoriesWithFinalists.filter((category) => selections[category.id]).length;
+  const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
+
+  function goToCategory(index: number) {
+    setMessage(null);
+    setCurrentCategoryIndex(Math.min(Math.max(index, 0), categoriesWithFinalists.length - 1));
+  }
+
+  function selectFinalist(categoryId: string, finalistId: string) {
+    setMessage(null);
+    setSelections((current) => ({
+      ...current,
+      [categoryId]: finalistId,
+    }));
+
+    if (safeCategoryIndex < categoriesWithFinalists.length - 1) {
+      setCurrentCategoryIndex(safeCategoryIndex + 1);
+    }
+  }
 
   function submitBallot() {
     setMessage(null);
+    const missingCategories = getIncompleteBallotCategoryTitles({
+      categories: categoriesWithFinalists,
+      selections,
+    });
+
+    if (missingCategories.length > 0) {
+      const firstMissingIndex = categoriesWithFinalists.findIndex(
+        (category) => !selections[category.id],
+      );
+
+      if (firstMissingIndex >= 0) {
+        setCurrentCategoryIndex(firstMissingIndex);
+      }
+
+      setMessage(`Select a vote for: ${missingCategories.join(", ")}.`);
+      return;
+    }
+
     startTransition(async () => {
       const result = (await submitBallotAction({
         ballotScope: model.currentBallotScope,
@@ -519,6 +573,8 @@ function VotingExperience({
 
       if (result.ok) {
         setReceipt(result.confirmationCode ?? "OP-RECORDED");
+        setMessage(null);
+        router.refresh();
       } else {
         setMessage(result.error ?? "Unable to submit ballot.");
       }
@@ -530,49 +586,69 @@ function VotingExperience({
       <div className="panel-head">
         <div>
           <p className="eyebrow">Ballot</p>
-          <h2>{model.currentBallotScope === "main" ? "Tap one finalist" : "Runoff ballot"}</h2>
+          <h2>{model.currentBallotScope === "main" ? "Vote by category" : "Runoff ballot"}</h2>
         </div>
-        <StagePill stage="Open" />
+        <StagePill stage={`${completedCount}/${categoriesWithFinalists.length} selected`} />
       </div>
-      <div className="ballot-list">
-        {categoriesWithFinalists.map((category) => {
-          const finalists = model.finalists.filter(
-            (finalist) =>
-              finalist.categoryId === category.id &&
-              finalist.status === "approved" &&
-              finalist.nomineeId !== currentUser.member.id &&
-              eligibleMemberIds.has(finalist.nomineeId),
-          );
-
-          return (
-            <section className="ballot-category" key={category.id}>
-              <h3>{category.title}</h3>
-              <div className="finalist-grid">
-                {finalists.map((finalist) => (
-                  <FinalistCard
-                    category={category}
-                    finalist={finalist}
-                    key={finalist.id}
-                    member={memberById.get(finalist.nomineeId)}
-                    selected={selections[category.id] === finalist.id}
-                    setSelected={(finalistId) =>
-                      setSelections((current) => ({
-                        ...current,
-                        [category.id]: finalistId,
-                      }))
-                    }
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      {submittedReceipt ? (
+        <div className="notice good">
+          Your ballot has been submitted. Receipt {submittedReceipt}
+        </div>
+      ) : null}
       {categoriesWithFinalists.length === 0 ? <EmptyState message="No ballot is ready yet." /> : null}
-      <button className="primary-action" disabled={!ready || pending} onClick={submitBallot} type="button">
-        {pending ? "Submitting" : "Submit ballot"}
-      </button>
-      {receipt ? <div className="notice good">Receipt {receipt}</div> : null}
+      {!submittedReceipt && currentCategory ? (
+        <>
+          <section className="ballot-category guided-ballot" key={currentCategory.id}>
+            <div className="ballot-category-head">
+              <span>
+                Category {safeCategoryIndex + 1} of {categoriesWithFinalists.length}
+              </span>
+              <strong>{currentCategory.title}</strong>
+            </div>
+            <div className="finalist-grid">
+              {currentFinalists.map((finalist) => (
+                <FinalistCard
+                  category={currentCategory}
+                  finalist={finalist}
+                  key={finalist.id}
+                  member={memberById.get(finalist.nomineeId)}
+                  selected={selections[currentCategory.id] === finalist.id}
+                  setSelected={(finalistId) => selectFinalist(currentCategory.id, finalistId)}
+                />
+              ))}
+            </div>
+          </section>
+          <div className="ballot-stepper" aria-label="Ballot category navigation">
+            <button
+              className="secondary-action"
+              disabled={safeCategoryIndex === 0 || pending}
+              onClick={() => goToCategory(safeCategoryIndex - 1)}
+              type="button"
+            >
+              ← Previous
+            </button>
+            <span className="selection-count">
+              {completedCount}/{categoriesWithFinalists.length} categories selected
+            </span>
+            <button
+              className="secondary-action"
+              disabled={safeCategoryIndex >= categoriesWithFinalists.length - 1 || pending}
+              onClick={() => goToCategory(safeCategoryIndex + 1)}
+              type="button"
+            >
+              Next →
+            </button>
+          </div>
+          <button
+            className="primary-action"
+            disabled={categoriesWithFinalists.length === 0 || pending}
+            onClick={submitBallot}
+            type="button"
+          >
+            {pending ? "Submitting" : "Submit ballot"}
+          </button>
+        </>
+      ) : null}
       {message ? <div className="notice warn">{message}</div> : null}
     </section>
   );
@@ -608,7 +684,7 @@ export function MemberAwardsPage({
         <NominationExperience currentUser={currentUser} model={model} />
       ) : null}
       {canParticipate && access.canVote ? (
-        <VotingExperience currentUser={currentUser} model={model} />
+        <VotingExperience model={model} />
       ) : null}
       {canParticipate && !access.canNominate && !access.canVote ? (
         <section className="panel">
@@ -752,7 +828,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
 
   function resetAwardsRun() {
     const confirmed = window.confirm(
-      "Reset this awards run? This clears nominations, finalists, votes, receipts, certifications, and published results for the current cycle. Members, categories, photos, and admin access stay intact.",
+      "Reset this awards run? This clears categories, nominations, finalists, votes, receipts, certifications, and published results for the current cycle. Members, photos, and admin access stay intact.",
     );
 
     if (!confirmed) return;
@@ -854,15 +930,37 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const categoryNameInputRef = useRef<HTMLInputElement | null>(null);
+  const modalScrollYRef = useRef(0);
   const router = useRouter();
 
+  useEffect(() => {
+    if (!categoryModalOpen) return;
+
+    const scrollY = modalScrollYRef.current;
+    const originalOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY });
+      categoryNameInputRef.current?.focus({ preventScroll: true });
+    });
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.requestAnimationFrame(() => window.scrollTo({ top: scrollY }));
+    };
+  }, [categoryModalOpen]);
+
   function openNewCategory() {
+    modalScrollYRef.current = window.scrollY;
     setMessage(null);
     setCategoryForm(blankCategory);
     setCategoryModalOpen(true);
   }
 
   function editCategory(category: Category) {
+    modalScrollYRef.current = window.scrollY;
     setMessage(null);
     setCategoryForm({
       categoryId: category.id,
@@ -980,10 +1078,10 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
               <label>
                 <span>Name</span>
                 <input
-                  autoFocus
                   onChange={(event) =>
                     setCategoryForm((current) => ({ ...current, title: event.target.value }))
                   }
+                  ref={categoryNameInputRef}
                   value={categoryForm.title}
                 />
               </label>
@@ -1089,6 +1187,15 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       total + group.finalists.filter((finalist) => finalist.status === "draft").length,
     0,
   );
+  const nominationGroups = useMemo(
+    () =>
+      groupNominationsByNominator({
+        categories: model.categories,
+        members: model.members,
+        nominations: model.nominations,
+      }) as NominationReviewGroup[],
+    [model.categories, model.members, model.nominations],
+  );
 
   function approveAllFinalists() {
     setMessage(null);
@@ -1124,34 +1231,33 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
         <div className="queue-block">
           <div className="queue-head">
             <h3>Submitted nominations</h3>
-            <small>{model.nominations.length} total</small>
+            <small>{nominationGroups.length} ballots</small>
           </div>
           <div className="mini-list">
-            {model.nominations.length === 0 ? (
+            {nominationGroups.length === 0 ? (
               <EmptyState message="No nominations submitted yet." />
             ) : null}
-            {model.nominations.map((nomination) => {
-              const nominee = model.members.find((member) => member.id === nomination.nomineeId);
-              const nominator = model.members.find(
-                (member) => member.id === nomination.nominatorId,
-              );
-              const category = model.categories.find((item) => item.id === nomination.categoryId);
-
-              return (
-                <article className="mini-row review-row" key={nomination.id}>
-                  <PersonAvatar member={nominee} name={nominee?.name ?? "Nominee"} />
-                  <span>
-                    <strong>{nominee?.name ?? "Nominee"}</strong>
-                    <small>{category?.title ?? "Category"}</small>
-                    <small>Nominated by {nominator?.name ?? "Member"}</small>
-                    {nomination.statement ? (
-                      <small className="review-note">{nomination.statement}</small>
-                    ) : null}
-                  </span>
-                  <StagePill stage={nomination.status} />
-                </article>
-              );
-            })}
+            {nominationGroups.map((group) => (
+              <article className="mini-row review-row nomination-review-card" key={group.nominatorId}>
+                <PersonAvatar member={group.nominator} name={group.nominatorName} />
+                <span>
+                  <strong>{group.nominatorName}</strong>
+                  <small>{group.nominations.length} categories submitted</small>
+                  <div className="nomination-choice-list">
+                    {group.nominations.map((nomination) => (
+                      <div className="nomination-choice" key={nomination.id}>
+                        <strong>{nomination.categoryTitle}</strong>
+                        <small>{nomination.nomineeName}</small>
+                        {nomination.statement ? (
+                          <small className="review-note">{nomination.statement}</small>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </span>
+                <StagePill stage="Submitted" />
+              </article>
+            ))}
           </div>
         </div>
         <div className="queue-block">

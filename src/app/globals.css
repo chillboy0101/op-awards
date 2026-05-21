@@ -220,6 +220,7 @@ a {
   align-items: end;
   gap: 18px;
   margin: 18px 0;
+  min-height: 184px;
   padding: 28px;
   border: 1px solid #22313c;
   border-radius: 8px;
@@ -237,6 +238,7 @@ a {
   letter-spacing: 0;
 }
 
+.hero-panel p,
 .member-hero p {
   margin: 8px 0 0;
   color: rgba(255, 255, 255, 0.75);
@@ -551,11 +553,6 @@ textarea:focus {
   background: #f3f6f8;
 }
 
-.person-card.is-self:hover {
-  border-color: var(--line);
-  box-shadow: none;
-}
-
 .self-badge {
   margin-left: auto;
   border: 1px solid var(--line);
@@ -605,10 +602,41 @@ textarea:focus {
   gap: 10px;
 }
 
+.guided-ballot {
+  gap: 14px;
+}
+
+.ballot-category-head {
+  display: grid;
+  gap: 4px;
+}
+
+.ballot-category-head span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 720;
+}
+
+.ballot-category-head strong {
+  font-size: 1.22rem;
+}
+
 .ballot-category h3 {
   margin: 0;
   font-size: 1rem;
   letter-spacing: 0;
+}
+
+.ballot-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ballot-stepper .selection-count {
+  flex: 1;
+  text-align: center;
 }
 
 .notice,
@@ -872,6 +900,30 @@ textarea:focus {
   line-height: 1.4;
 }
 
+.nomination-review-card {
+  align-items: flex-start;
+}
+
+.nomination-review-card > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.nomination-choice-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.nomination-choice {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
 .inline-message {
   color: var(--accent-strong);
 }
@@ -1027,6 +1079,7 @@ textarea:focus {
 
   .hero-panel,
   .member-hero {
+    min-height: 184px;
     padding: 22px;
   }
 
@@ -1067,6 +1120,18 @@ textarea:focus {
   .cycle-action-buttons .secondary-action,
   .cycle-action-buttons .danger-action {
     width: 100%;
+  }
+
+  .ballot-stepper {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ballot-stepper .selection-count {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    text-align: left;
   }
 }
 

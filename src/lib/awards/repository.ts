@@ -19,6 +19,11 @@ export type AwardPortalModel = {
   audit: AuditEvent[];
   categories: Category[];
   currentBallotScope: string;
+  currentMemberVoteReceipt: {
+    ballotScope: string;
+    confirmationCode: string;
+    submittedAt: string | null;
+  } | null;
   cycle: {
     configuredStage: AwardStage;
     id: string;
@@ -111,6 +116,7 @@ function getFallbackPortalData(): AwardPortalModel {
   return {
     ...awardModel,
     currentBallotScope: "main",
+    currentMemberVoteReceipt: null,
     cycle: {
       ...awardModel.cycle,
       configuredStage: awardModel.cycle.stage,
@@ -133,7 +139,7 @@ function getFallbackPortalData(): AwardPortalModel {
 }
 
 export async function getPortalData(
-  options: { includeClerkRoster?: boolean } = {},
+  options: { currentMemberId?: string; includeClerkRoster?: boolean } = {},
 ): Promise<AwardPortalModel> {
   if (!hasDatabaseUrl()) return getFallbackPortalData();
 
@@ -370,6 +376,13 @@ export async function getPortalData(
       category,
       finalists: finalistList.filter((finalist) => finalist.categoryId === category.id),
     }));
+  const currentMemberVoteReceipt = options.currentMemberId
+    ? voteReceipts.find(
+        (receipt) =>
+          receipt.memberId === options.currentMemberId &&
+          (receipt.ballotScope ?? "main") === currentBallotScope,
+      )
+    : null;
 
   return {
     audit: audit.map(
@@ -383,6 +396,13 @@ export async function getPortalData(
     ),
     categories: categoryList,
     currentBallotScope,
+    currentMemberVoteReceipt: currentMemberVoteReceipt
+      ? {
+          ballotScope: currentMemberVoteReceipt.ballotScope ?? "main",
+          confirmationCode: currentMemberVoteReceipt.confirmationCode,
+          submittedAt: dateToIso(currentMemberVoteReceipt.submittedAt),
+        }
+      : null,
     cycle: {
       configuredStage,
       id: cycle.id,

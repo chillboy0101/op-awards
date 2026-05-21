@@ -19,6 +19,7 @@ import {
   calculateResults,
   createRunoffCategory,
   createResultCertificationSnapshot,
+  getResetCategoryIds,
   getUnresolvedTieCategoryIds,
   suggestFinalists,
   validateBallotSelections,
@@ -598,17 +599,12 @@ export async function submitBallotAction(input: unknown) {
 
   const ballotValidation = validateBallotSelections({
     categories: scopeCategories,
-    currentMemberId: user.member.id,
     finalists: approvedFinalists,
     members,
     selections: parsed.data.selections,
   });
 
   if (!ballotValidation.ok) {
-    if (ballotValidation.reason === "SELF_VOTE_NOT_ALLOWED") {
-      return { ok: false, error: "You cannot vote for yourself." };
-    }
-
     return { ok: false, error: "Select one approved finalist per category." };
   }
 
@@ -1094,7 +1090,7 @@ export async function resetAwardsRunAction(input: unknown) {
     .select()
     .from(schema.categories)
     .where(eq(schema.categories.cycleId, cycle.id));
-  const categoryIds = cycleCategories.map((category) => category.id);
+  const categoryIds = getResetCategoryIds(cycleCategories);
 
   if (categoryIds.length > 0) {
     await db
@@ -1110,9 +1106,7 @@ export async function resetAwardsRunAction(input: unknown) {
 
   await db.delete(schema.voteReceipts).where(eq(schema.voteReceipts.cycleId, cycle.id));
   await db.delete(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id));
-  await db
-    .delete(schema.categories)
-    .where(and(eq(schema.categories.cycleId, cycle.id), eq(schema.categories.kind, "runoff")));
+  await db.delete(schema.categories).where(eq(schema.categories.cycleId, cycle.id));
   const enabledMembers = await db
     .update(schema.members)
     .set({ awardsEligible: true, updatedAt: new Date() })
@@ -1133,7 +1127,7 @@ export async function resetAwardsRunAction(input: unknown) {
     actorMemberId: user.member.id,
     actorRole: user.role,
     target: cycle.id,
-    summary: "Reset awards activity and enabled all active members.",
+    summary: "Reset awards activity, categories, and enabled all active members.",
     metadata: {
       categories: categoryIds.length,
       enabledMembers: enabledMembers.length,
