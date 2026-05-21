@@ -605,6 +605,52 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.member-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.member-card-grid .person-card {
+  position: relative;
+  display: grid;
+  min-height: 210px;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  overflow: hidden;
+  padding: 22px 16px;
+  text-align: center;
+}
+
+.member-card-grid .person-card::after {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  content: "";
+  pointer-events: none;
+}
+
+.member-card-grid .person-card .avatar {
+  width: 92px;
+  height: 92px;
+  flex-basis: 92px;
+  font-size: 1.4rem;
+}
+
+.member-card-grid .person-card strong {
+  font-size: 1.08rem;
+  line-height: 1.15;
+}
+
+.member-card-grid .self-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  margin-left: 0;
+  background: #ffffff;
+}
+
 .ballot-category {
   display: grid;
   gap: 10px;
@@ -1108,12 +1154,19 @@ textarea:focus {
 
   .admin-grid,
   .admin-columns,
-  .people-list,
   .finalist-grid,
   .progress-grid,
   .schedule-form-grid,
   .chip-row {
     grid-template-columns: 1fr;
+  }
+
+  .people-list {
+    grid-template-columns: 1fr;
+  }
+
+  .member-card-grid .person-card {
+    min-height: 184px;
   }
 
   .status-strip,

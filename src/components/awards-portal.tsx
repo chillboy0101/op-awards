@@ -293,7 +293,7 @@ function MemberDirectory({
         type="search"
         value={query}
       />
-      <div className="people-list">
+      <div className="people-list member-card-grid">
         {filteredMembers.map((member) => (
           <button
             aria-label={member.name}
@@ -418,7 +418,6 @@ function NominationExperience({
           <p className="eyebrow">Nomination</p>
           <h2>{heading}</h2>
         </div>
-        <StagePill stage={`${completedCategoryIds.size}/${activeCategories.length} selected`} />
       </div>
       {hasSubmittedNominations ? (
         <div className="notice good">
