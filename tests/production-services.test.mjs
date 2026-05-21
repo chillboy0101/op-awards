@@ -70,15 +70,15 @@ describe("Cloudinary member-photo signing", () => {
     });
 
     assert.deepEqual(params, {
-      folder: "cpa-awards/members",
+      folder: "op-awards/members",
       overwrite: true,
       public_id: "member_mem_123",
-      tags: "cpa-awards,member-photo",
+      tags: "op-awards,member-photo",
       timestamp: 1_779_193_600,
     });
 
     const signature = signCloudinaryParams(params, "secret");
 
-    assert.equal(signature, "f1e71deb89a906f8ab668af2b28232a9768b56e8");
+    assert.equal(signature, "3c8e69924d68df5f0a55d8e8ed08c2d3ff793843");
   });
 });

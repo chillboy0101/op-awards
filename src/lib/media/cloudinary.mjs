@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 
 export function buildCloudinaryMemberPhotoParams({ memberId, timestamp }) {
   return {
-    folder: "cpa-awards/members",
+    folder: "op-awards/members",
     overwrite: true,
     public_id: `member_${memberId}`,
-    tags: "cpa-awards,member-photo",
+    tags: "op-awards,member-photo",
     timestamp,
   };
 }
