@@ -53,6 +53,10 @@ export function buildNominationDirectory({ currentMemberId, members, query = "" 
     });
 }
 
+export function toggleSelection(currentSelection, nextSelection) {
+  return currentSelection === nextSelection ? "" : nextSelection;
+}
+
 export function buildAwardCategorySetup(input) {
   const title = compactText(input.title);
   const awardTitle = title || "Award";

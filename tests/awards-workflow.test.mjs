@@ -18,6 +18,7 @@ import {
   groupNominationsByNominator,
   recordAnonymousVotes,
   suggestFinalists,
+  toggleSelection,
   validateNominationBatch,
   validateBallotSelections,
   validateCategorySetup,
@@ -125,6 +126,12 @@ describe("nomination validation", () => {
 });
 
 describe("nomination directory", () => {
+  it("toggles a selected person off when they are tapped again", () => {
+    assert.equal(toggleSelection("", "mem-1"), "mem-1");
+    assert.equal(toggleSelection("mem-1", "mem-1"), "");
+    assert.equal(toggleSelection("mem-1", "mem-2"), "mem-2");
+  });
+
   it("includes the signed-in member as a selectable nomination candidate", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",

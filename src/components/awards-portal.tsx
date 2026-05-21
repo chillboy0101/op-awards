@@ -26,6 +26,7 @@ import {
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
   groupNominationsByNominator,
+  toggleSelection,
 } from "@/lib/awards/workflow.mjs";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
 import type { AwardPortalModel } from "@/lib/awards/repository";
@@ -251,7 +252,7 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
   return (
     <main className="app-shell">
       <Header active="public" />
-      <section className="hero-panel">
+      <section className="hero-panel public-hero">
         <div>
           <h1>{model.cycle.title}</h1>
         </div>
@@ -335,7 +336,7 @@ function MemberDirectory({
               .join(" ")}
             disabled={!member.selectable}
             key={member.id}
-            onClick={() => setSelectedNominee(member.id)}
+            onClick={() => setSelectedNominee(toggleSelection(selectedNominee, member.id))}
             type="button"
           >
             <PersonAvatar member={member} name={member.name} />
@@ -533,12 +534,21 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
 
   function selectFinalist(categoryId: string, finalistId: string) {
     setMessage(null);
-    setSelections((current) => ({
-      ...current,
-      [categoryId]: finalistId,
-    }));
+    const nextSelection = toggleSelection(selections[categoryId] ?? "", finalistId);
 
-    if (safeCategoryIndex < categoriesWithFinalists.length - 1) {
+    setSelections((current) => {
+      const next = { ...current };
+
+      if (nextSelection) {
+        next[categoryId] = nextSelection;
+      } else {
+        delete next[categoryId];
+      }
+
+      return next;
+    });
+
+    if (nextSelection && safeCategoryIndex < categoriesWithFinalists.length - 1) {
       setCurrentCategoryIndex(safeCategoryIndex + 1);
     }
   }

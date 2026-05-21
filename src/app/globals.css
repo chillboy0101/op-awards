@@ -238,6 +238,16 @@ a {
   letter-spacing: 0;
 }
 
+.public-hero {
+  align-items: center;
+}
+
+.public-hero h1 {
+  max-width: 100%;
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  line-height: 0.92;
+}
+
 .hero-panel p,
 .member-hero p {
   margin: 8px 0 0;
@@ -933,13 +943,17 @@ textarea:focus {
   inset: 0;
   z-index: 40;
   display: grid;
-  place-items: center;
-  padding: 18px;
+  align-items: start;
+  justify-items: center;
+  overflow-y: auto;
+  padding: clamp(14px, 5vh, 32px) 18px;
   background: rgba(15, 23, 42, 0.38);
 }
 
 .modal-panel {
   width: min(520px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1083,6 +1097,10 @@ textarea:focus {
     padding: 22px;
   }
 
+  .public-hero h1 {
+    font-size: clamp(2.4rem, 13vw, 4.4rem);
+  }
+
   .member-hero .profile-pill {
     width: 100%;
   }
@@ -1132,6 +1150,14 @@ textarea:focus {
     grid-column: 1 / -1;
     grid-row: 1;
     text-align: left;
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .modal-panel {
+    max-height: calc(100dvh - 20px);
   }
 }
 
