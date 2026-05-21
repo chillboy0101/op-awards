@@ -852,47 +852,6 @@ textarea:focus {
   will-change: opacity, transform;
 }
 
-.celebration-balloon {
-  position: absolute;
-  bottom: -140px;
-  left: var(--balloon-left);
-  width: var(--balloon-width);
-  height: var(--balloon-height);
-  border-radius: 50% 50% 45% 45%;
-  background:
-    radial-gradient(circle at 30% 26%, rgba(255, 255, 255, 0.82), transparent 17%),
-    var(--balloon-color);
-  box-shadow: inset -8px -10px 14px rgba(0, 0, 0, 0.14);
-  opacity: 0;
-  transform-origin: 50% 100%;
-  animation: balloon-float var(--balloon-duration) cubic-bezier(0.38, 0, 0.22, 1) infinite;
-  animation-delay: var(--balloon-delay);
-  will-change: opacity, transform;
-}
-
-.celebration-balloon::before {
-  position: absolute;
-  bottom: -7px;
-  left: 50%;
-  width: 12px;
-  height: 10px;
-  border-radius: 0 0 8px 8px;
-  background: inherit;
-  content: "";
-  transform: translateX(-50%);
-}
-
-.celebration-balloon::after {
-  position: absolute;
-  bottom: -44px;
-  left: 50%;
-  width: 1px;
-  height: 42px;
-  background: rgba(15, 23, 42, 0.28);
-  content: "";
-  transform: translateX(-50%);
-}
-
 @keyframes confetti-fall {
   0% {
     opacity: 0;
@@ -923,40 +882,6 @@ textarea:focus {
   100% {
     opacity: 0;
     transform: translate3d(var(--confetti-x5), calc(100vh + 90px), 0) rotate(var(--confetti-rot5));
-  }
-}
-
-@keyframes balloon-float {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 96px, 0) rotate(var(--balloon-r0)) scale(0.86);
-  }
-
-  10% {
-    opacity: 0.92;
-    transform: translate3d(var(--balloon-x1), -8vh, 0) rotate(var(--balloon-r1)) scale(0.92);
-  }
-
-  26% {
-    transform: translate3d(var(--balloon-x2), -28vh, 0) rotate(var(--balloon-r2)) scale(0.98);
-  }
-
-  44% {
-    transform: translate3d(var(--balloon-x3), -48vh, 0) rotate(var(--balloon-r3)) scale(1.02);
-  }
-
-  63% {
-    transform: translate3d(var(--balloon-x4), -68vh, 0) rotate(var(--balloon-r4)) scale(0.99);
-  }
-
-  84% {
-    opacity: 0.92;
-    transform: translate3d(var(--balloon-x5), -90vh, 0) rotate(var(--balloon-r5)) scale(1.04);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate3d(var(--balloon-x3), calc(-100vh - 180px), 0) rotate(var(--balloon-r1)) scale(1.06);
   }
 }
 

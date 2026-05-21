@@ -125,32 +125,6 @@ const CONFETTI_PIECES = Array.from({ length: 64 }, (_, index) => {
   return { id: index + 1, style };
 });
 
-const CELEBRATION_BALLOONS = Array.from({ length: 10 }, (_, index) => {
-  const width = range(index, 23, 34, 56);
-  const color = CELEBRATION_COLORS[Math.floor(seededValue(index, 24) * CELEBRATION_COLORS.length)];
-  const style: CelebrationMotionStyle = {
-    "--balloon-color": color,
-    "--balloon-delay": `${fixed(-range(index, 25, 0, 10.2))}s`,
-    "--balloon-duration": `${fixed(range(index, 26, 10.5, 16.5))}s`,
-    "--balloon-height": `${fixed(width * range(index, 27, 1.22, 1.34))}px`,
-    "--balloon-left": `${fixed(range(index, 28, 3, 96))}vw`,
-    "--balloon-r0": `${fixed(signedRange(index, 29, 4))}deg`,
-    "--balloon-r1": `${fixed(signedRange(index, 30, 11))}deg`,
-    "--balloon-r2": `${fixed(signedRange(index, 31, 13))}deg`,
-    "--balloon-r3": `${fixed(signedRange(index, 32, 9))}deg`,
-    "--balloon-r4": `${fixed(signedRange(index, 33, 12))}deg`,
-    "--balloon-r5": `${fixed(signedRange(index, 34, 8))}deg`,
-    "--balloon-width": `${fixed(width)}px`,
-    "--balloon-x1": `${fixed(signedRange(index, 35, 38))}px`,
-    "--balloon-x2": `${fixed(signedRange(index, 36, 62))}px`,
-    "--balloon-x3": `${fixed(signedRange(index, 37, 78))}px`,
-    "--balloon-x4": `${fixed(signedRange(index, 38, 96))}px`,
-    "--balloon-x5": `${fixed(signedRange(index, 39, 84))}px`,
-  };
-
-  return { id: index + 1, style };
-});
-
 function initials(name: string) {
   return name
     .split(" ")
@@ -284,9 +258,6 @@ function FullPageConfetti() {
     <div className="confetti-overlay" aria-hidden="true">
       {CONFETTI_PIECES.map((piece) => (
         <span className="confetti-piece" key={piece.id} style={piece.style} />
-      ))}
-      {CELEBRATION_BALLOONS.map((balloon) => (
-        <span className="celebration-balloon" key={`balloon-${balloon.id}`} style={balloon.style} />
       ))}
     </div>
   );
