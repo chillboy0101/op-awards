@@ -877,6 +877,69 @@ textarea:focus {
 .confetti-piece:nth-child(16) { left: 95%; animation-delay: 0.5s; animation-duration: 5.4s; }
 .confetti-piece:nth-child(17) { left: 7%; animation-delay: 3s; animation-duration: 6.6s; }
 .confetti-piece:nth-child(18) { left: 88%; animation-delay: 3.3s; animation-duration: 5.8s; }
+.confetti-piece:nth-child(19) { left: 2%; animation-delay: 1.9s; animation-duration: 6.8s; }
+.confetti-piece:nth-child(20) { left: 14%; animation-delay: 3.6s; animation-duration: 5.6s; }
+.confetti-piece:nth-child(21) { left: 20%; animation-delay: 2.7s; animation-duration: 6.1s; }
+.confetti-piece:nth-child(22) { left: 26%; animation-delay: 3.9s; animation-duration: 5.9s; }
+.confetti-piece:nth-child(23) { left: 33%; animation-delay: 3.1s; animation-duration: 6.7s; }
+.confetti-piece:nth-child(24) { left: 40%; animation-delay: 4.2s; animation-duration: 5.5s; }
+.confetti-piece:nth-child(25) { left: 46%; animation-delay: 2.9s; animation-duration: 6.4s; }
+.confetti-piece:nth-child(26) { left: 52%; animation-delay: 4.6s; animation-duration: 5.7s; }
+.confetti-piece:nth-child(27) { left: 58%; animation-delay: 3.4s; animation-duration: 6.9s; }
+.confetti-piece:nth-child(28) { left: 64%; animation-delay: 4.1s; animation-duration: 5.3s; }
+.confetti-piece:nth-child(29) { left: 70%; animation-delay: 3.7s; animation-duration: 6.2s; }
+.confetti-piece:nth-child(30) { left: 76%; animation-delay: 4.8s; animation-duration: 5.8s; }
+.confetti-piece:nth-child(31) { left: 82%; animation-delay: 3.2s; animation-duration: 6.6s; }
+.confetti-piece:nth-child(32) { left: 92%; animation-delay: 4.4s; animation-duration: 5.4s; }
+.confetti-piece:nth-child(33) { left: 97%; animation-delay: 3.8s; animation-duration: 6s; }
+.confetti-piece:nth-child(34) { left: 35%; animation-delay: 5s; animation-duration: 6.5s; }
+
+.celebration-balloon {
+  --balloon-color: var(--gold);
+  --balloon-drift: 28px;
+  position: absolute;
+  bottom: -120px;
+  width: 42px;
+  height: 54px;
+  border-radius: 50% 50% 45% 45%;
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255, 255, 255, 0.82), transparent 17%),
+    var(--balloon-color);
+  box-shadow: inset -8px -10px 14px rgba(0, 0, 0, 0.14);
+  animation: balloon-float 9s ease-in infinite;
+}
+
+.celebration-balloon::before {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  width: 12px;
+  height: 10px;
+  border-radius: 0 0 8px 8px;
+  background: inherit;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.celebration-balloon::after {
+  position: absolute;
+  bottom: -44px;
+  left: 50%;
+  width: 1px;
+  height: 42px;
+  background: rgba(15, 23, 42, 0.28);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.celebration-balloon-1 { left: 7%; --balloon-color: #efc76d; --balloon-drift: 38px; animation-delay: 0.3s; animation-duration: 8.6s; }
+.celebration-balloon-2 { left: 18%; --balloon-color: #2d7fba; --balloon-drift: -26px; animation-delay: 2.1s; animation-duration: 10.2s; }
+.celebration-balloon-3 { left: 31%; --balloon-color: #176b60; --balloon-drift: 30px; animation-delay: 1.2s; animation-duration: 9.4s; }
+.celebration-balloon-4 { left: 47%; --balloon-color: #8d3b5c; --balloon-drift: -34px; animation-delay: 3.1s; animation-duration: 10.8s; }
+.celebration-balloon-5 { left: 62%; --balloon-color: #f3a83b; --balloon-drift: 26px; animation-delay: 0.9s; animation-duration: 9.9s; }
+.celebration-balloon-6 { left: 74%; --balloon-color: #2f8f83; --balloon-drift: -30px; animation-delay: 2.7s; animation-duration: 8.9s; }
+.celebration-balloon-7 { left: 86%; --balloon-color: #bf3f65; --balloon-drift: 24px; animation-delay: 1.7s; animation-duration: 10.5s; }
+.celebration-balloon-8 { left: 94%; --balloon-color: #3d6ad6; --balloon-drift: -22px; animation-delay: 4.1s; animation-duration: 9.6s; }
 
 @keyframes confetti-fall {
   0% {
@@ -891,6 +954,26 @@ textarea:focus {
   100% {
     opacity: 0;
     transform: translateY(calc(100vh + 80px)) rotate(320deg);
+  }
+}
+
+@keyframes balloon-float {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 80px, 0) scale(0.86);
+  }
+
+  12% {
+    opacity: 0.92;
+  }
+
+  78% {
+    opacity: 0.92;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--balloon-drift), calc(-100vh - 180px), 0) scale(1.05);
   }
 }
 

@@ -79,7 +79,8 @@ function useAutoDismissMessage(
 }
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-const CONFETTI_PIECES = Array.from({ length: 18 }, (_, index) => index + 1);
+const CONFETTI_PIECES = Array.from({ length: 34 }, (_, index) => index + 1);
+const CELEBRATION_BALLOONS = Array.from({ length: 8 }, (_, index) => index + 1);
 
 function initials(name: string) {
   return name
@@ -215,6 +216,9 @@ function FullPageConfetti() {
       {CONFETTI_PIECES.map((piece) => (
         <span className="confetti-piece" key={piece} />
       ))}
+      {CELEBRATION_BALLOONS.map((balloon) => (
+        <span className={`celebration-balloon celebration-balloon-${balloon}`} key={`balloon-${balloon}`} />
+      ))}
     </div>
   );
 }
@@ -247,7 +251,6 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
         <div className="celebration-scene" aria-label="Winner celebration">
           <div>
             <h3>Congratulations</h3>
-            <p>{winners.length ? "The honorees are live." : "Results are published."}</p>
           </div>
         </div>
       ) : null}
