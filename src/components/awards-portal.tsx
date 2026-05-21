@@ -22,7 +22,10 @@ import {
   upsertCategoryAction,
 } from "@/app/actions";
 import { getMemberPhaseAccess } from "@/lib/awards/phase";
-import { buildNominationDirectory } from "@/lib/awards/workflow.mjs";
+import {
+  buildNominationDirectory,
+  formatCategoryVotingSummary,
+} from "@/lib/awards/workflow.mjs";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
 import type { AwardPortalModel } from "@/lib/awards/repository";
 import type { CurrentUser } from "@/lib/auth/service";
@@ -843,7 +846,6 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
 
 function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const blankCategory = {
-    active: true,
     categoryId: "",
     finalistLimit: 3,
     title: "",
@@ -863,7 +865,6 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   function editCategory(category: Category) {
     setMessage(null);
     setCategoryForm({
-      active: category.active,
       categoryId: category.id,
       finalistLimit: category.finalistLimit,
       title: category.title,
@@ -921,9 +922,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
           <article className="compact-row category-edit-row" key={category.id}>
             <span>
               <strong>{category.title}</strong>
-              <small>
-                {category.nominationLimit} nomination / {category.finalistLimit} finalists
-              </small>
+              <small>{formatCategoryVotingSummary(category)}</small>
             </span>
             <div className="row-actions">
               <button
@@ -989,7 +988,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
                 />
               </label>
               <label>
-                <span>Finalists</span>
+                <span>Nominees for voting</span>
                 <input
                   min={1}
                   onChange={(event) =>
@@ -1001,16 +1000,6 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
                   type="number"
                   value={categoryForm.finalistLimit}
                 />
-              </label>
-              <label className="check-row">
-                <input
-                  checked={categoryForm.active}
-                  onChange={(event) =>
-                    setCategoryForm((current) => ({ ...current, active: event.target.checked }))
-                  }
-                  type="checkbox"
-                />
-                <span>Active</span>
               </label>
             </div>
             <div className="modal-actions">

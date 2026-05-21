@@ -10,6 +10,7 @@ import {
   createResultCertificationSnapshot,
   createRunoffCategory,
   createVoteReceipt,
+  formatCategoryVotingSummary,
   getUnresolvedTieCategoryIds,
   recordAnonymousVotes,
   suggestFinalists,
@@ -313,6 +314,17 @@ describe("finalist workflow", () => {
 });
 
 describe("category setup", () => {
+  it("describes only how many nominees move to voting", () => {
+    assert.equal(
+      formatCategoryVotingSummary({ finalistLimit: 1 }),
+      "1 nominee moves to voting",
+    );
+    assert.equal(
+      formatCategoryVotingSummary({ finalistLimit: 2 }),
+      "2 nominees move to voting",
+    );
+  });
+
   it("builds hidden defaults for a simple awards category form", () => {
     assert.deepEqual(
       buildAwardCategorySetup({

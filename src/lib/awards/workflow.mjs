@@ -68,6 +68,14 @@ export function buildAwardCategorySetup(input) {
   };
 }
 
+export function formatCategoryVotingSummary(category) {
+  const finalistLimit = positiveInteger(category.finalistLimit, 3);
+  const nomineeLabel = finalistLimit === 1 ? "nominee" : "nominees";
+  const verb = finalistLimit === 1 ? "moves" : "move";
+
+  return `${finalistLimit} ${nomineeLabel} ${verb} to voting`;
+}
+
 export function validateCategorySetup(input) {
   const category = {
     active: input.active !== false,
