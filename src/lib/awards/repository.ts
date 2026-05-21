@@ -64,6 +64,7 @@ export type AwardPortalModel = {
     count: number;
     leader: string;
     status: string;
+    winners?: { name: string; photoUrl?: string | null }[];
   }[];
   voteSubmissions: {
     ballotScope: string;
@@ -295,37 +296,132 @@ export async function getPortalData(
     }
   }
 
+  const finalistsByCategoryId = new Map<string, Finalist[]>();
+  for (const finalist of finalistList) {
+    const group = finalistsByCategoryId.get(finalist.categoryId) ?? [];
+    group.push(finalist);
+    finalistsByCategoryId.set(finalist.categoryId, group);
+  }
+  const voteCountsByCategoryId = new Map<string, Map<string, number>>();
+  for (const vote of votes) {
+    const category = categoryById.get(vote.categoryId);
+    if (!category || (vote.ballotScope ?? "main") !== category.ballotScope) continue;
+
+    const categoryCounts = voteCountsByCategoryId.get(vote.categoryId) ?? new Map<string, number>();
+    categoryCounts.set(vote.finalistId, (categoryCounts.get(vote.finalistId) ?? 0) + 1);
+    voteCountsByCategoryId.set(vote.categoryId, categoryCounts);
+  }
+  const certificationsByCategoryId = new Map(
+    certifications.map((certification) => [certification.categoryId, certification]),
+  );
+  const runoffsByParentCategoryId = new Map<string, Category[]>();
+  for (const category of categoryList) {
+    if (category.kind !== "runoff" || !category.parentCategoryId) continue;
+
+    const group = runoffsByParentCategoryId.get(category.parentCategoryId) ?? [];
+    group.push(category);
+    runoffsByParentCategoryId.set(category.parentCategoryId, group);
+  }
+  type PortalWinner = { name: string; photoUrl: string | null };
+  type CategoryResult = {
+    category: string;
+    categoryId: string;
+    count: number;
+    leader: string;
+    status: string;
+    totals: { displayName: string; finalistId: string; voteCount: number }[];
+    winners: PortalWinner[];
+  };
+  const resultCache = new Map<string, CategoryResult>();
+
+  function winnerFromFinalist(finalistId?: string | null) {
+    if (!finalistId) return null;
+
+    const finalist = finalistById.get(finalistId);
+    if (!finalist) return null;
+
+    return {
+      name: finalist.displayName,
+      photoUrl: memberById.get(finalist.nomineeId)?.photoUrl ?? finalist.photoUrl ?? null,
+    };
+  }
+
+  function winnersFromSnapshot(
+    snapshot:
+      | {
+          leader?: string;
+          tiedWinners?: { displayName?: string; finalistId?: string }[];
+        }
+      | undefined,
+  ) {
+    if (!snapshot) return [];
+
+    if (Array.isArray(snapshot.tiedWinners) && snapshot.tiedWinners.length > 0) {
+      return snapshot.tiedWinners
+        .map((winner) => {
+          const finalist = winner.finalistId ? finalistById.get(winner.finalistId) : undefined;
+          const name = winner.displayName ?? finalist?.displayName;
+
+          if (!name) return null;
+
+          return {
+            name,
+            photoUrl: finalist ? memberById.get(finalist.nomineeId)?.photoUrl ?? finalist.photoUrl ?? null : null,
+          };
+        })
+        .filter((winner): winner is PortalWinner => Boolean(winner));
+    }
+
+    if (!snapshot.leader || snapshot.leader === "Pending" || snapshot.leader === "Tie") return [];
+
+    return snapshot.leader.split(",").map((name) => ({
+      name: name.trim(),
+      photoUrl: memberList.find((member) => member.name === name.trim())?.photoUrl ?? null,
+    }));
+  }
+
   function resultForCategory(category: Category) {
-    const categoryFinalists = finalistList.filter((finalist) => finalist.categoryId === category.id);
-    const categoryVotes = votes.filter(
-      (vote) => vote.categoryId === category.id && (vote.ballotScope ?? "main") === category.ballotScope,
-    );
+    const cached = resultCache.get(category.id);
+    if (cached) return cached;
+
+    const categoryFinalists = finalistsByCategoryId.get(category.id) ?? [];
+    const categoryVoteCounts = voteCountsByCategoryId.get(category.id) ?? new Map<string, number>();
     const totals = categoryFinalists
       .map((finalist) => ({
         displayName: finalist.displayName,
         finalistId: finalist.id,
-        voteCount: categoryVotes.filter((vote) => vote.finalistId === finalist.id).length,
+        voteCount: categoryVoteCounts.get(finalist.id) ?? 0,
       }))
       .sort((left, right) => {
         if (right.voteCount !== left.voteCount) return right.voteCount - left.voteCount;
         return left.displayName.localeCompare(right.displayName);
       });
-    const certification = certifications.find((item) => item.categoryId === category.id);
+    const certification = certificationsByCategoryId.get(category.id);
     const snapshot = certification?.tallySnapshot as
-      | { count?: number; leader?: string; status?: string }
+      | {
+          count?: number;
+          leader?: string;
+          status?: string;
+          tiedWinners?: { displayName?: string; finalistId?: string }[];
+        }
       | undefined;
-    const topCount = totals[0]?.voteCount ?? snapshot?.count ?? 0;
+    const calculatedTopCount = totals[0]?.voteCount ?? 0;
+    const topCount = calculatedTopCount > 0 ? calculatedTopCount : snapshot?.count ?? 0;
     const topIds = totals
       .filter((total) => topCount > 0 && total.voteCount === topCount)
       .map((total) => total.finalistId);
+    const certifiedWinner = winnerFromFinalist(certification?.winnerFinalistId);
+    const snapshotWinners = winnersFromSnapshot(snapshot);
+    const calculatedWinners = topIds
+      .map((finalistId) => winnerFromFinalist(finalistId))
+      .filter((winner): winner is PortalWinner => Boolean(winner));
     const winner =
-      (certification?.winnerFinalistId &&
-        finalistById.get(certification.winnerFinalistId)?.displayName) ||
+      certifiedWinner?.name ||
       snapshot?.leader ||
-      finalistById.get(topIds[0] ?? "")?.displayName ||
+      calculatedWinners[0]?.name ||
       "Pending";
 
-    return {
+    const result = {
       category: category.title,
       categoryId: category.id,
       count: topCount,
@@ -334,7 +430,11 @@ export async function getPortalData(
         snapshot?.status ??
         (topIds.length > 1 && topCount > 0 ? "tie-check" : topCount > 0 ? "ready" : "pending"),
       totals,
+      winners: certifiedWinner ? [certifiedWinner] : snapshotWinners.length ? snapshotWinners : calculatedWinners,
     };
+    resultCache.set(category.id, result);
+
+    return result;
   }
 
   const privateResultEntries = categoryList
@@ -354,12 +454,9 @@ export async function getPortalData(
 
     const result = privateResultByCategory.get(category.id);
     const hasCalculatedTie = result?.status === "tie-check";
-    const hasResolvedRunoff = categoryList
-      .filter((candidate) => candidate.kind === "runoff" && candidate.parentCategoryId === category.id)
-      .some((runoffCategory) => {
-        const certification = certifications.find((item) => item.categoryId === runoffCategory.id);
-        return Boolean(certification?.winnerFinalistId);
-      });
+    const hasResolvedRunoff = (runoffsByParentCategoryId.get(category.id) ?? []).some((runoffCategory) =>
+      Boolean(certificationsByCategoryId.get(runoffCategory.id)?.winnerFinalistId),
+    );
 
     if (hasCalculatedTie && !hasResolvedRunoff) unresolvedTieIds.add(category.id);
   }
@@ -368,11 +465,10 @@ export async function getPortalData(
     .filter((category) => category.kind !== "runoff")
     .map((category) => {
       const baseResult = resultForCategory(category);
-      const resolvedRunoff = categoryList
-        .filter((candidate) => candidate.kind === "runoff" && candidate.parentCategoryId === category.id)
+      const resolvedRunoff = (runoffsByParentCategoryId.get(category.id) ?? [])
         .map((runoffCategory) => ({
           category: runoffCategory,
-          certification: certifications.find((item) => item.categoryId === runoffCategory.id),
+          certification: certificationsByCategoryId.get(runoffCategory.id),
           result: resultForCategory(runoffCategory),
         }))
         .find((item) => item.certification?.winnerFinalistId);
@@ -383,6 +479,7 @@ export async function getPortalData(
           count: baseResult.count,
           leader: baseResult.leader,
           status: baseResult.status,
+          winners: baseResult.winners,
         };
       }
 
@@ -391,6 +488,7 @@ export async function getPortalData(
         count: resolvedRunoff.result.count,
         leader: resolvedRunoff.result.leader,
         status: "ready",
+        winners: resolvedRunoff.result.winners,
       };
     });
   const finalistReview = categoryList

@@ -222,6 +222,18 @@ function FullPageConfetti() {
 function PublicWinners({ model }: { model: AwardPortalModel }) {
   const published = model.cycle.stage === "Published";
   const winners = model.results.filter((result) => published && result.leader !== "Pending");
+  const winnerCards = winners.flatMap((result) => {
+    const resultWinners = result.winners?.length
+      ? result.winners
+      : result.leader.split(",").map((name) => ({ name: name.trim(), photoUrl: null }));
+
+    return resultWinners.map((winner) => ({
+      category: result.category,
+      key: `${result.category}-${winner.name}`,
+      name: winner.name,
+      photoUrl: winner.photoUrl,
+    }));
+  });
 
   return (
     <section className="panel">
@@ -239,14 +251,28 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
           </div>
         </div>
       ) : null}
-      <div className="result-list">
-        {model.results.map((result) => (
-          <div className="result-row" key={result.category}>
-            <span>{result.category}</span>
-            <strong>{published ? result.leader : "Not published"}</strong>
-          </div>
-        ))}
-      </div>
+      {published ? (
+        <div className="winner-card-grid">
+          {winnerCards.map((winner) => (
+            <article className="winner-card" key={winner.key}>
+              <PersonAvatar member={{ name: winner.name, photoUrl: winner.photoUrl }} name={winner.name} />
+              <span>
+                <small>{winner.category}</small>
+                <strong>{winner.name}</strong>
+              </span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="result-list">
+          {model.results.map((result) => (
+            <div className="result-row" key={result.category}>
+              <span>{result.category}</span>
+              <strong>Not published</strong>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -282,7 +308,7 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
           <h1>{model.cycle.title}</h1>
         </div>
       </section>
-      <PublicCycleStatus model={model} />
+      {model.cycle.stage !== "Published" ? <PublicCycleStatus model={model} /> : null}
       <PublicWinners model={model} />
     </main>
   );
@@ -300,11 +326,15 @@ function MemberDirectory({
   setSelectedNominee: (memberId: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const filteredMembers = buildNominationDirectory({
-    currentMemberId,
-    members,
-    query,
-  }) as DirectoryMember[];
+  const filteredMembers = useMemo(
+    () =>
+      buildNominationDirectory({
+        currentMemberId,
+        members,
+        query,
+      }) as DirectoryMember[],
+    [currentMemberId, members, query],
+  );
 
   return (
     <div className="directory-block">
@@ -351,11 +381,15 @@ function NominationExperience({
   currentUser: CurrentUser;
   model: AwardPortalModel;
 }) {
-  const activeCategories = model.categories.filter(
-    (category) =>
-      category.active &&
-      category.kind !== "runoff" &&
-      (category.ballotScope ?? "main") === "main",
+  const activeCategories = useMemo(
+    () =>
+      model.categories.filter(
+        (category) =>
+          category.active &&
+          category.kind !== "runoff" &&
+          (category.ballotScope ?? "main") === "main",
+      ),
+    [model.categories],
   );
   const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
   const [nominationDrafts, setNominationDrafts] = useState<Record<string, NominationDraft>>({});
@@ -373,11 +407,15 @@ function NominationExperience({
   const selectedDraft = currentCategory
     ? nominationDrafts[currentCategory.id] ?? { nomineeId: "", statement: "" }
     : { nomineeId: "", statement: "" };
-  const submittedCategoryIds = getSubmittedNominationCategoryIds({
-    categories: activeCategories,
-    memberId: currentUser.member.id,
-    nominations: model.nominations,
-  });
+  const submittedCategoryIds = useMemo(
+    () =>
+      getSubmittedNominationCategoryIds({
+        categories: activeCategories,
+        memberId: currentUser.member.id,
+        nominations: model.nominations,
+      }),
+    [activeCategories, currentUser.member.id, model.nominations],
+  );
   const hasSubmittedNominations =
     submitted ||
     hasSubmittedCompleteNominationBallot({
@@ -385,12 +423,16 @@ function NominationExperience({
       memberId: currentUser.member.id,
       nominations: model.nominations,
     });
-  const completedCategoryIds = new Set([
-    ...submittedCategoryIds,
-    ...activeCategories
-      .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
-      .map((category) => category.id),
-  ]);
+  const completedCategoryIds = useMemo(
+    () =>
+      new Set([
+        ...submittedCategoryIds,
+        ...activeCategories
+          .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
+          .map((category) => category.id),
+      ]),
+    [activeCategories, nominationDrafts, submittedCategoryIds],
+  );
   const heading = activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
   const allCategoriesSelected =
     activeCategories.length > 0 &&
@@ -567,29 +609,37 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       ),
     [model.members],
   );
-  const visibleFinalists = model.finalists.filter(
-    (finalist) =>
-      eligibleMemberIds.has(finalist.nomineeId),
+  const visibleFinalists = useMemo(
+    () => model.finalists.filter((finalist) => eligibleMemberIds.has(finalist.nomineeId)),
+    [eligibleMemberIds, model.finalists],
   );
-  const categoriesWithFinalists = model.categories.filter((category) =>
-    category.active &&
-    category.ballotScope === model.currentBallotScope &&
-    visibleFinalists.some(
-      (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
-    ),
+  const categoriesWithFinalists = useMemo(
+    () =>
+      model.categories.filter((category) =>
+        category.active &&
+        category.ballotScope === model.currentBallotScope &&
+        visibleFinalists.some(
+          (finalist) => finalist.categoryId === category.id && finalist.status === "approved",
+        ),
+      ),
+    [model.categories, model.currentBallotScope, visibleFinalists],
   );
   const safeCategoryIndex = Math.min(
     currentCategoryIndex,
     Math.max(categoriesWithFinalists.length - 1, 0),
   );
   const currentCategory = categoriesWithFinalists[safeCategoryIndex];
-  const currentFinalists = currentCategory
-    ? visibleFinalists.filter(
-        (finalist) =>
-          finalist.categoryId === currentCategory.id &&
-          finalist.status === "approved",
-      )
-    : [];
+  const currentFinalists = useMemo(
+    () =>
+      currentCategory
+        ? visibleFinalists.filter(
+            (finalist) =>
+              finalist.categoryId === currentCategory.id &&
+              finalist.status === "approved",
+          )
+        : [],
+    [currentCategory, visibleFinalists],
+  );
   const completedCount = categoriesWithFinalists.filter((category) => selections[category.id]).length;
   const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
 
@@ -761,7 +811,7 @@ export function MemberAwardsPage({
         <div>
           <p className="eyebrow">Awards Portal</p>
           <h1>{access.label}</h1>
-          <p>{access.message}</p>
+          {model.cycle.stage !== "Published" ? <p>{access.message}</p> : null}
         </div>
         <ProfilePill currentUser={currentUser} />
       </section>

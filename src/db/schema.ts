@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -121,22 +122,32 @@ export const awardCycles = pgTable("award_cycles", {
   publishAt: timestamp("publish_at", { withTimezone: true }),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   ...timestamps,
-});
+}, (table) => ({
+  createdAtIdx: index("award_cycles_created_at_idx").on(table.createdAt),
+}));
 
-export const categories = pgTable("categories", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  description: text("description").notNull(),
-  nominationQuestion: text("nomination_question").notNull(),
-  nominationLimit: integer("nomination_limit").notNull().default(1),
-  finalistLimit: integer("finalist_limit").notNull().default(3),
-  active: boolean("active").notNull().default(true),
-  parentCategoryId: uuid("parent_category_id"),
-  kind: text("kind").notNull().default("standard"),
-  ballotScope: text("ballot_scope").notNull().default("main"),
-  ...timestamps,
-});
+export const categories = pgTable(
+  "categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    nominationQuestion: text("nomination_question").notNull(),
+    nominationLimit: integer("nomination_limit").notNull().default(1),
+    finalistLimit: integer("finalist_limit").notNull().default(3),
+    active: boolean("active").notNull().default(true),
+    parentCategoryId: uuid("parent_category_id"),
+    kind: text("kind").notNull().default("standard"),
+    ballotScope: text("ballot_scope").notNull().default("main"),
+    ...timestamps,
+  },
+  (table) => ({
+    cycleIdx: index("categories_cycle_idx").on(table.cycleId),
+    cycleScopeIdx: index("categories_cycle_scope_idx").on(table.cycleId, table.ballotScope),
+    parentIdx: index("categories_parent_idx").on(table.parentCategoryId),
+  }),
+);
 
 export const nominations = pgTable(
   "nominations",
@@ -154,6 +165,8 @@ export const nominations = pgTable(
     ...timestamps,
   },
   (table) => ({
+    categoryIdx: index("nominations_category_idx").on(table.categoryId),
+    cycleIdx: index("nominations_cycle_idx").on(table.cycleId),
     oneNominationPerCategory: uniqueIndex("nominations_member_category_unique").on(
       table.categoryId,
       table.nominatorId,
@@ -176,6 +189,7 @@ export const finalists = pgTable(
     ...timestamps,
   },
   (table) => ({
+    categoryStatusIdx: index("finalists_category_status_idx").on(table.categoryId, table.status),
     categoryNomineeUnique: uniqueIndex("finalists_category_nominee_unique").on(
       table.categoryId,
       table.nomineeId,
@@ -195,6 +209,7 @@ export const voteReceipts = pgTable(
     submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    cycleScopeIdx: index("vote_receipts_cycle_scope_idx").on(table.cycleId, table.ballotScope),
     oneReceiptPerCycle: uniqueIndex("vote_receipts_cycle_member_unique").on(
       table.cycleId,
       table.memberId,
@@ -206,26 +221,39 @@ export const voteReceipts = pgTable(
   }),
 );
 
-export const anonymousVotes = pgTable("anonymous_votes", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
-  categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
-  finalistId: uuid("finalist_id").notNull().references(() => finalists.id, { onDelete: "cascade" }),
-  ballotScope: text("ballot_scope").notNull().default("main"),
-  submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const anonymousVotes = pgTable(
+  "anonymous_votes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cycleId: uuid("cycle_id").notNull().references(() => awardCycles.id, { onDelete: "cascade" }),
+    categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+    finalistId: uuid("finalist_id").notNull().references(() => finalists.id, { onDelete: "cascade" }),
+    ballotScope: text("ballot_scope").notNull().default("main"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    categoryScopeIdx: index("anonymous_votes_category_scope_idx").on(table.categoryId, table.ballotScope),
+    cycleScopeIdx: index("anonymous_votes_cycle_scope_idx").on(table.cycleId, table.ballotScope),
+  }),
+);
 
-export const resultCertifications = pgTable("result_certifications", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
-  winnerFinalistId: uuid("winner_finalist_id").references(() => finalists.id),
-  status: certificationStatus("status").notNull().default("pending"),
-  tallySnapshot: jsonb("tally_snapshot").$type<Record<string, unknown>>().notNull(),
-  certifiedByStaffId: uuid("certified_by_staff_id").references(() => staffUsers.id),
-  certifiedAt: timestamp("certified_at", { withTimezone: true }),
-  publishedAt: timestamp("published_at", { withTimezone: true }),
-  ...timestamps,
-});
+export const resultCertifications = pgTable(
+  "result_certifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    categoryId: uuid("category_id").notNull().references(() => categories.id, { onDelete: "cascade" }),
+    winnerFinalistId: uuid("winner_finalist_id").references(() => finalists.id),
+    status: certificationStatus("status").notNull().default("pending"),
+    tallySnapshot: jsonb("tally_snapshot").$type<Record<string, unknown>>().notNull(),
+    certifiedByStaffId: uuid("certified_by_staff_id").references(() => staffUsers.id),
+    certifiedAt: timestamp("certified_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => ({
+    categoryIdx: index("result_certifications_category_idx").on(table.categoryId),
+  }),
+);
 
 export const auditEvents = pgTable("audit_events", {
   id: uuid("id").defaultRandom().primaryKey(),
