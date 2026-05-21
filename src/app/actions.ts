@@ -17,6 +17,7 @@ import {
   buildDraftFinalists,
   buildAwardCategorySetup,
   calculateResults,
+  createAcceptedTieCertificationSnapshot,
   createRunoffCategory,
   createResultCertificationSnapshot,
   getResetCategoryIds,
@@ -1290,6 +1291,16 @@ export async function createRunoffAction(categoryId: string) {
     return { ok: false, error: "A runoff already exists for this category." };
   }
 
+  const [existingCertification] = await db
+    .select()
+    .from(schema.resultCertifications)
+    .where(eq(schema.resultCertifications.categoryId, category.id))
+    .limit(1);
+
+  if (existingCertification?.status === "published") {
+    return { ok: false, error: "Joint winners have already been accepted for this category." };
+  }
+
   const [approvedFinalists, votes] = await Promise.all([
     db
       .select()
@@ -1379,6 +1390,122 @@ export async function createRunoffAction(categoryId: string) {
   revalidateAwardPages();
 
   return { ok: true };
+}
+
+export async function acceptTiedWinnersAction(categoryId: string) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const db = getDb();
+  const [category] = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.id, categoryId))
+    .limit(1);
+
+  if (!category) return { ok: false, error: "Category not found." };
+  if (category.kind === "runoff") return { ok: false, error: "Joint winners apply to main categories only." };
+
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, category.cycleId))
+    .limit(1);
+
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+
+  const progress = await getCycleCompletionProgress(category.cycleId, "main");
+  const effectiveStage = getCycleEffectiveStage(cycle, progress);
+
+  if (effectiveStage !== "Certification" && effectiveStage !== "Published") {
+    return { ok: false, error: "Accept tied winners after voting is complete." };
+  }
+
+  const existingRunoff = await db
+    .select({ id: schema.categories.id })
+    .from(schema.categories)
+    .where(
+      and(
+        eq(schema.categories.parentCategoryId, category.id),
+        eq(schema.categories.kind, "runoff"),
+        eq(schema.categories.active, true),
+      ),
+    )
+    .limit(1);
+
+  if (existingRunoff.length > 0) {
+    return { ok: false, error: "A runoff already exists for this category." };
+  }
+
+  const [approvedFinalists, votes] = await Promise.all([
+    db
+      .select()
+      .from(schema.finalists)
+      .where(
+        and(
+          eq(schema.finalists.categoryId, category.id),
+          eq(schema.finalists.status, "approved"),
+        ),
+      ),
+    db
+      .select()
+      .from(schema.anonymousVotes)
+      .where(eq(schema.anonymousVotes.categoryId, category.id)),
+  ]);
+  const result = calculateResults({
+    category,
+    finalists: approvedFinalists.map((finalist) => ({
+      categoryId: finalist.categoryId,
+      displayName: finalist.displayName,
+      id: finalist.id,
+      nominationCount: finalist.nominationCount,
+      nomineeId: finalist.nomineeId,
+    })),
+    votes,
+  });
+
+  if (result.status !== "tie" || result.tiedFinalists.length < 2) {
+    return { ok: false, error: "Joint winners are only available for tied results." };
+  }
+
+  const certification = createAcceptedTieCertificationSnapshot({ category, result });
+
+  await db
+    .delete(schema.resultCertifications)
+    .where(eq(schema.resultCertifications.categoryId, category.id));
+
+  await db.insert(schema.resultCertifications).values({
+    categoryId: category.id,
+    certifiedAt: new Date(),
+    status: "published",
+    tallySnapshot: certification.tallySnapshot,
+    winnerFinalistId: null,
+  });
+
+  await db.insert(schema.auditEvents).values({
+    action: "accept_tied_winners",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: categoryId,
+    summary: "Admin accepted joint winners for a tied result.",
+    metadata: {
+      count: result.tiedFinalists[0]?.voteCount ?? 0,
+      winners: result.tiedFinalists.map((finalist) => finalist.displayName),
+    },
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true, count: result.tiedFinalists.length };
 }
 
 export async function certifyResultsAction(categoryId: string) {
@@ -1486,7 +1613,7 @@ export async function publishWinnersAction(cycleId: string) {
   for (const category of cycleCategories) {
     if (
       category.kind !== "runoff" &&
-      certificationByCategory.get(category.id)?.status === "runoff"
+      ["published", "runoff"].includes(certificationByCategory.get(category.id)?.status ?? "")
     ) {
       continue;
     }
@@ -1506,7 +1633,7 @@ export async function publishWinnersAction(cycleId: string) {
   });
 
   if (unresolvedTieIds.length > 0) {
-    return { ok: false, error: "Resolve tied categories with a runoff before publishing." };
+    return { ok: false, error: "Resolve tied categories with joint winners or a runoff before publishing." };
   }
 
   await db

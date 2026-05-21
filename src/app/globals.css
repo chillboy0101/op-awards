@@ -755,13 +755,11 @@ textarea:focus {
 }
 
 .celebration-scene {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 132px;
   margin-bottom: 14px;
-  overflow: hidden;
   border: 1px solid rgba(23, 107, 96, 0.2);
   border-radius: 8px;
   background:
@@ -783,37 +781,57 @@ textarea:focus {
   color: var(--muted);
 }
 
-.confetti {
+.confetti-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-piece {
   position: absolute;
   top: -18px;
   width: 9px;
   height: 22px;
   border-radius: 3px;
-  animation: confetti-fall 3.8s linear infinite;
+  animation: confetti-fall 5.4s linear infinite;
 }
 
-.confetti-a {
-  left: 18%;
+.confetti-piece:nth-child(4n + 1) {
   background: var(--gold);
 }
 
-.confetti-b {
-  left: 38%;
+.confetti-piece:nth-child(4n + 2) {
   background: var(--accent);
-  animation-delay: 0.9s;
 }
 
-.confetti-c {
-  left: 62%;
+.confetti-piece:nth-child(4n + 3) {
   background: var(--wine);
-  animation-delay: 1.7s;
 }
 
-.confetti-d {
-  left: 82%;
+.confetti-piece:nth-child(4n) {
   background: #2d7fba;
-  animation-delay: 2.4s;
 }
+
+.confetti-piece:nth-child(1) { left: 4%; animation-delay: 0s; animation-duration: 5s; }
+.confetti-piece:nth-child(2) { left: 11%; animation-delay: 1.1s; animation-duration: 6.2s; }
+.confetti-piece:nth-child(3) { left: 17%; animation-delay: 0.4s; animation-duration: 5.8s; }
+.confetti-piece:nth-child(4) { left: 23%; animation-delay: 1.8s; animation-duration: 5.2s; }
+.confetti-piece:nth-child(5) { left: 30%; animation-delay: 0.8s; animation-duration: 6s; }
+.confetti-piece:nth-child(6) { left: 37%; animation-delay: 2.1s; animation-duration: 5.5s; }
+.confetti-piece:nth-child(7) { left: 43%; animation-delay: 1.4s; animation-duration: 6.4s; }
+.confetti-piece:nth-child(8) { left: 49%; animation-delay: 0.2s; animation-duration: 5.6s; }
+.confetti-piece:nth-child(9) { left: 55%; animation-delay: 2.6s; animation-duration: 5.1s; }
+.confetti-piece:nth-child(10) { left: 61%; animation-delay: 1.7s; animation-duration: 6.1s; }
+.confetti-piece:nth-child(11) { left: 67%; animation-delay: 0.6s; animation-duration: 5.7s; }
+.confetti-piece:nth-child(12) { left: 73%; animation-delay: 2.3s; animation-duration: 6.3s; }
+.confetti-piece:nth-child(13) { left: 79%; animation-delay: 1s; animation-duration: 5.3s; }
+.confetti-piece:nth-child(14) { left: 85%; animation-delay: 2.8s; animation-duration: 5.9s; }
+.confetti-piece:nth-child(15) { left: 90%; animation-delay: 1.6s; animation-duration: 6.5s; }
+.confetti-piece:nth-child(16) { left: 95%; animation-delay: 0.5s; animation-duration: 5.4s; }
+.confetti-piece:nth-child(17) { left: 7%; animation-delay: 3s; animation-duration: 6.6s; }
+.confetti-piece:nth-child(18) { left: 88%; animation-delay: 3.3s; animation-duration: 5.8s; }
 
 @keyframes confetti-fall {
   0% {
@@ -827,7 +845,7 @@ textarea:focus {
 
   100% {
     opacity: 0;
-    transform: translateY(180px) rotate(320deg);
+    transform: translateY(calc(100vh + 80px)) rotate(320deg);
   }
 }
 
@@ -908,6 +926,12 @@ textarea:focus {
   letter-spacing: 0;
 }
 
+.compact-queue-head h4 {
+  margin: 0;
+  font-size: 0.94rem;
+  letter-spacing: 0;
+}
+
 .result-admin-block .queue-head h3 {
   font-weight: 840;
 }
@@ -934,6 +958,28 @@ textarea:focus {
 }
 
 .category-list .category-edit-row {
+  align-items: center;
+}
+
+.vote-submission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.submission-column {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.submission-row {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.tie-decision-row {
   align-items: center;
 }
 
@@ -1090,10 +1136,8 @@ textarea:focus {
     transform: none;
   }
 
-  .confetti {
-    animation: none;
-    opacity: 0.75;
-    top: 22px;
+  .confetti-overlay {
+    display: none;
   }
 }
 
@@ -1195,7 +1239,8 @@ textarea:focus {
   .finalist-grid,
   .progress-grid,
   .schedule-form-grid,
-  .chip-row {
+  .chip-row,
+  .vote-submission-grid {
     grid-template-columns: 1fr;
   }
 

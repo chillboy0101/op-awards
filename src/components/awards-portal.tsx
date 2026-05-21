@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { createPortal } from "react-dom";
 
 import {
+  acceptTiedWinnersAction,
   bulkUpdateMemberEligibilityAction,
-  certifyResultsAction,
   createNominationsAction,
   createRunoffAction,
   deleteCategoryAction,
@@ -49,6 +49,7 @@ type NominationReviewGroup = {
     statement: string;
   }[];
 };
+type PrivateResult = AwardPortalModel["privateResults"][number];
 type HeaderNavItem = {
   active: boolean;
   href: string;
@@ -78,6 +79,7 @@ function useAutoDismissMessage(
 }
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const CONFETTI_PIECES = Array.from({ length: 18 }, (_, index) => index + 1);
 
 function initials(name: string) {
   return name
@@ -207,6 +209,16 @@ function EmptyState({ message }: { message: string }) {
   return <div className="empty-state">{message}</div>;
 }
 
+function FullPageConfetti() {
+  return (
+    <div className="confetti-overlay" aria-hidden="true">
+      {CONFETTI_PIECES.map((piece) => (
+        <span className="confetti-piece" key={piece} />
+      ))}
+    </div>
+  );
+}
+
 function PublicWinners({ model }: { model: AwardPortalModel }) {
   const published = model.cycle.stage === "Published";
   const winners = model.results.filter((result) => published && result.leader !== "Pending");
@@ -218,14 +230,9 @@ function PublicWinners({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Results</p>
           <h2>{published ? "Winners" : "Not published"}</h2>
         </div>
-        {published ? <StagePill stage="Published" /> : null}
       </div>
       {published ? (
         <div className="celebration-scene" aria-label="Winner celebration">
-          <span className="confetti confetti-a" />
-          <span className="confetti confetti-b" />
-          <span className="confetti confetti-c" />
-          <span className="confetti confetti-d" />
           <div>
             <h3>Congratulations</h3>
             <p>{winners.length ? "The honorees are live." : "Results are published."}</p>
@@ -251,7 +258,7 @@ function getStageAction(stage: string) {
   if (access.canVote) return "Voting is open until all members submit.";
   if (access.label === "Published") return "Winners are live.";
   if (access.label === "Review") return "Admin review is in progress.";
-  if (access.label === "Certification") return "Results are ready for certification.";
+  if (access.label === "Certification") return "Results are being reviewed.";
 
   return "The next cycle is being prepared.";
 }
@@ -268,6 +275,7 @@ function PublicCycleStatus({ model }: { model: AwardPortalModel }) {
 export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
   return (
     <main className="app-shell">
+      {model.cycle.stage === "Published" ? <FullPageConfetti /> : null}
       <Header active="public" />
       <section className="hero-panel public-hero">
         <div>
@@ -671,7 +679,6 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Ballot</p>
           <h2>{model.currentBallotScope === "main" ? "Vote by category" : "Runoff ballot"}</h2>
         </div>
-        <StagePill stage={`${completedCount}/${categoriesWithFinalists.length} selected`} />
       </div>
       {submittedReceipt ? (
         <div className="notice good">
@@ -976,8 +983,10 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
       </div>
       <div className="cycle-actions">
         <div className="cycle-action-copy">
-          <span>Review, certification, and publishing stay under admin control.</span>
-          {model.hasUnresolvedTies ? <span>Resolve tied categories with a runoff.</span> : null}
+          <span>Review, results, and publishing stay under admin control.</span>
+          {model.hasUnresolvedTies ? (
+            <span>Resolve tied categories with joint winners or a runoff.</span>
+          ) : null}
         </div>
         <div className="cycle-action-buttons">
           {canOpenNominations ? (
@@ -1193,57 +1202,138 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   );
 }
 
-function CategoryActionRow({
-  canCertify,
-  canRunoff,
+function formatSubmittedAt(value: string | null) {
+  if (!value) return "Submitted";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Submitted";
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  }).format(date);
+}
+
+function VoteSubmissionPanel({ model }: { model: AwardPortalModel }) {
+  const { pending, submitted } = model.voteSubmissions;
+
+  return (
+    <div className="queue-block result-admin-block">
+      <div className="queue-head">
+        <h3>Vote submissions</h3>
+        <small>
+          {submitted.length}/{submitted.length + pending.length} submitted
+        </small>
+      </div>
+      <div className="vote-submission-grid">
+        <div className="submission-column">
+          <div className="queue-head compact-queue-head">
+            <h4>Submitted votes</h4>
+            <small>{submitted.length}</small>
+          </div>
+          <div className="mini-list">
+            {submitted.length === 0 ? <EmptyState message="No votes submitted yet." /> : null}
+            {submitted.map((member) => (
+              <article className="mini-row submission-row" key={member.memberId}>
+                <PersonAvatar member={member} name={member.name} />
+                <span>
+                  <strong>{member.name}</strong>
+                  <small>{formatSubmittedAt(member.submittedAt)}</small>
+                </span>
+              </article>
+            ))}
+          </div>
+        </div>
+        <div className="submission-column">
+          <div className="queue-head compact-queue-head">
+            <h4>Pending votes</h4>
+            <small>{pending.length}</small>
+          </div>
+          <div className="mini-list">
+            {pending.length === 0 ? <EmptyState message="Everyone has submitted." /> : null}
+            {pending.map((member) => (
+              <article className="mini-row submission-row" key={member.memberId}>
+                <PersonAvatar member={member} name={member.name} />
+                <span>
+                  <strong>{member.name}</strong>
+                  <small>Pending</small>
+                </span>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TieDecisionRow({
   category,
-  finalistCount,
-  nominationCount,
+  hasRunoff,
+  result,
 }: {
-  canCertify: boolean;
-  canRunoff: boolean;
   category: Category;
-  finalistCount: number;
-  nominationCount: number;
+  hasRunoff: boolean;
+  result: PrivateResult;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   useAutoDismissMessage(message, setMessage);
+  const tiedNominees = (result.totals ?? [])
+    .filter((total) => result.count > 0 && total.voteCount === result.count)
+    .map((total) => total.displayName);
+
+  function acceptJointWinners() {
+    setMessage(null);
+    startTransition(async () => {
+      const actionResult = (await acceptTiedWinnersAction(category.id)) as PortalResult;
+      setMessage(
+        actionResult.ok
+          ? "Joint winners accepted."
+          : actionResult.error ?? "Unable to accept joint winners.",
+      );
+      if (actionResult.ok) router.refresh();
+    });
+  }
 
   function createRunoff() {
     setMessage(null);
     startTransition(async () => {
       const result = (await createRunoffAction(category.id)) as PortalResult;
-      setMessage(result.ok ? "Runoff noted." : result.error ?? "Unable to create runoff.");
-      if (result.ok) router.refresh();
-    });
-  }
-
-  function certify() {
-    setMessage(null);
-    startTransition(async () => {
-      const result = (await certifyResultsAction(category.id)) as PortalResult;
-      setMessage(result.ok ? "Results certified." : result.error ?? "Unable to certify results.");
+      setMessage(result.ok ? "Runoff ballot created." : result.error ?? "Unable to create runoff.");
       if (result.ok) router.refresh();
     });
   }
 
   return (
-    <article className="mini-row category-action-row">
+    <article className="mini-row category-action-row tie-decision-row">
       <span>
         <strong>{category.title}</strong>
         <small>
-          {nominationCount} nominations / {finalistCount} voting nominees
+          {tiedNominees.join(", ")} / {result.count} votes
         </small>
+        {hasRunoff ? <small>Runoff ballot already created.</small> : null}
         {message ? <small className="inline-message">{message}</small> : null}
       </span>
       <div className="row-actions">
-        <button className="secondary-action" disabled={pending || !canRunoff} onClick={createRunoff} type="button">
-          Runoff
+        <button
+          className="secondary-action"
+          disabled={pending || hasRunoff}
+          onClick={createRunoff}
+          type="button"
+        >
+          Create runoff
         </button>
-        <button className="primary-action" disabled={pending || !canCertify} onClick={certify} type="button">
-          Certify
+        <button
+          className="primary-action"
+          disabled={pending || hasRunoff}
+          onClick={acceptJointWinners}
+          type="button"
+        >
+          Publish as joint winners
         </button>
       </div>
     </article>
@@ -1251,7 +1341,6 @@ function CategoryActionRow({
 }
 
 function AdminQueues({ model }: { model: AwardPortalModel }) {
-  const canCertify = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
   const draftNomineeCount = model.finalistReview.reduce(
     (total, group) =>
       total + group.finalists.filter((finalist) => finalist.status === "draft").length,
@@ -1271,6 +1360,45 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       }) as NominationReviewGroup[],
     [model.categories, model.members, model.nominations],
   );
+  const categoryById = useMemo(
+    () => new Map(model.categories.map((category) => [category.id, category])),
+    [model.categories],
+  );
+  const tieDecisions = useMemo(
+    () =>
+      model.privateResults
+        .map((result) => {
+          const category = categoryById.get(result.categoryId);
+          const tiedNominees = result.totals?.filter(
+            (total) => result.count > 0 && total.voteCount === result.count,
+          );
+          const hasRunoff = model.categories.some(
+            (candidate) =>
+              candidate.active &&
+              candidate.kind === "runoff" &&
+              candidate.parentCategoryId === result.categoryId,
+          );
+
+          if (
+            !category ||
+            category.kind === "runoff" ||
+            !["tie", "tie-check"].includes(result.status) ||
+            !tiedNominees ||
+            tiedNominees.length < 2
+          ) {
+            return null;
+          }
+
+          return { category, hasRunoff, result };
+        })
+        .filter(Boolean) as { category: Category; hasRunoff: boolean; result: PrivateResult }[],
+    [categoryById, model.categories, model.privateResults],
+  );
+  const showVoteSubmissions =
+    model.cycle.stage === "Voting" ||
+    model.cycle.stage === "Certification" ||
+    model.cycle.stage === "Published" ||
+    model.progress.voteReceiptCount > 0;
 
   return (
     <section className="panel wide-panel">
@@ -1279,7 +1407,6 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           <p className="eyebrow">Review</p>
           <h2>Nomination review</h2>
         </div>
-        <StagePill stage="Automatic" />
       </div>
       <div className="admin-columns">
         <div className="queue-block">
@@ -1351,6 +1478,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           </div>
         </div>
       </div>
+      {showVoteSubmissions ? <VoteSubmissionPanel model={model} /> : null}
       <div className="queue-block result-admin-block">
         <div className="queue-head">
           <h3>Private results</h3>
@@ -1373,38 +1501,24 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           ))}
         </div>
       </div>
-      <div className="queue-block result-admin-block">
-        <div className="queue-head">
-          <h3>Certification</h3>
+      {tieDecisions.length > 0 ? (
+        <div className="queue-block result-admin-block">
+          <div className="queue-head">
+            <h3>Tie decision</h3>
+            <small>{tieDecisions.length} tied category</small>
+          </div>
+          <div className="mini-list">
+            {tieDecisions.map(({ category, hasRunoff, result }) => (
+              <TieDecisionRow
+                category={category}
+                hasRunoff={hasRunoff}
+                key={category.id}
+                result={result}
+              />
+            ))}
+          </div>
         </div>
-        <div className="mini-list">
-          {model.categories.map((category) => (
-            <CategoryActionRow
-              canCertify={canCertify}
-              canRunoff={
-                canCertify &&
-                category.kind !== "runoff" &&
-                ["tie", "tie-check"].includes(
-                  model.privateResults.find((result) => result.category === category.title)
-                    ?.status ?? "",
-                )
-              }
-              category={category}
-              finalistCount={
-                model.finalists.filter(
-                  (finalist) =>
-                    finalist.categoryId === category.id && finalist.status === "approved",
-                ).length
-              }
-              key={category.id}
-              nominationCount={
-                model.nominations.filter((nomination) => nomination.categoryId === category.id)
-                  .length
-              }
-            />
-          ))}
-        </div>
-      </div>
+      ) : null}
     </section>
   );
 }

@@ -7,6 +7,7 @@ import {
   buildDraftFinalists,
   buildNominationDirectory,
   calculateResults,
+  createAcceptedTieCertificationSnapshot,
   createResultCertificationSnapshot,
   createRunoffCategory,
   createVoteReceipt,
@@ -810,6 +811,24 @@ describe("anonymous voting", () => {
       createResultCertificationSnapshot({ category, result: tieResult }).winnerFinalistId,
       null,
     );
+    assert.deepEqual(createAcceptedTieCertificationSnapshot({ category, result: tieResult }), {
+      status: "published",
+      tallySnapshot: {
+        category: "Leadership Excellence",
+        count: 1,
+        leader: "Blair Chen, Devon Patel",
+        status: "published",
+        tiedWinners: [
+          { displayName: "Blair Chen", finalistId: "fin-1", voteCount: 1 },
+          { displayName: "Devon Patel", finalistId: "fin-2", voteCount: 1 },
+        ],
+        totals: [
+          { displayName: "Blair Chen", finalistId: "fin-1", voteCount: 1 },
+          { displayName: "Devon Patel", finalistId: "fin-2", voteCount: 1 },
+        ],
+      },
+      winnerFinalistId: null,
+    });
 
     const noVoteResult = calculateResults({ category, finalists, votes: [] });
     assert.equal(
@@ -831,6 +850,20 @@ describe("anonymous voting", () => {
         ],
       }),
       [category.id],
+    );
+
+    assert.deepEqual(
+      getUnresolvedTieCategoryIds({
+        categories: [category],
+        certifications: [
+          {
+            categoryId: category.id,
+            status: "published",
+            winnerFinalistId: null,
+          },
+        ],
+      }),
+      [],
     );
 
     assert.deepEqual(

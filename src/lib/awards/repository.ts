@@ -53,6 +53,7 @@ export type AwardPortalModel = {
   progress: CycleProgress;
   privateResults: {
     category: string;
+    categoryId: string;
     count: number;
     leader: string;
     status: string;
@@ -64,6 +65,16 @@ export type AwardPortalModel = {
     leader: string;
     status: string;
   }[];
+  voteSubmissions: {
+    ballotScope: string;
+    pending: { memberId: string; name: string; photoUrl?: string | null }[];
+    submitted: {
+      memberId: string;
+      name: string;
+      photoUrl?: string | null;
+      submittedAt: string | null;
+    }[];
+  };
 };
 
 function toStage(stage: string): AwardStage {
@@ -112,6 +123,12 @@ function getFallbackPortalData(): AwardPortalModel {
     nominations: awardModel.nominations,
     voteReceipts: [],
   });
+  const fallbackPrivateResults = awardModel.results.map((result) => ({
+    ...result,
+    categoryId:
+      awardModel.categories.find((category) => category.title === result.category)?.id ??
+      result.category,
+  }));
 
   return {
     ...awardModel,
@@ -133,8 +150,13 @@ function getFallbackPortalData(): AwardPortalModel {
     },
     finalistReview: [],
     hasUnresolvedTies: false,
-    privateResults: awardModel.results,
+    privateResults: fallbackPrivateResults,
     progress,
+    voteSubmissions: {
+      ballotScope: "main",
+      pending: [],
+      submitted: [],
+    },
   };
 }
 
@@ -305,6 +327,7 @@ export async function getPortalData(
 
     return {
       category: category.title,
+      categoryId: category.id,
       count: topCount,
       leader: winner,
       status:
@@ -383,6 +406,37 @@ export async function getPortalData(
           (receipt.ballotScope ?? "main") === currentBallotScope,
       )
     : null;
+  const scopedVoteReceipts = voteReceipts.filter(
+    (receipt) => (receipt.ballotScope ?? "main") === currentBallotScope,
+  );
+  const voteReceiptByMemberId = new Map(
+    scopedVoteReceipts.map((receipt) => [receipt.memberId, receipt]),
+  );
+  const eligibleVotingMembers = memberList
+    .filter((member) => member.status === "active" && member.awardsEligible !== false)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const voteSubmissions = {
+    ballotScope: currentBallotScope,
+    pending: eligibleVotingMembers
+      .filter((member) => !voteReceiptByMemberId.has(member.id))
+      .map((member) => ({
+        memberId: member.id,
+        name: member.name,
+        photoUrl: member.photoUrl,
+      })),
+    submitted: eligibleVotingMembers
+      .filter((member) => voteReceiptByMemberId.has(member.id))
+      .map((member) => {
+        const receipt = voteReceiptByMemberId.get(member.id);
+
+        return {
+          memberId: member.id,
+          name: member.name,
+          photoUrl: member.photoUrl,
+          submittedAt: dateToIso(receipt?.submittedAt),
+        };
+      }),
+  };
 
   return {
     audit: audit.map(
@@ -441,5 +495,6 @@ export async function getPortalData(
     privateResults,
     progress,
     results,
+    voteSubmissions,
   };
 }

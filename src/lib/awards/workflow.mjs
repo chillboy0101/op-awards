@@ -575,6 +575,33 @@ export function createResultCertificationSnapshot({ category, result }) {
   };
 }
 
+export function createAcceptedTieCertificationSnapshot({ category, result }) {
+  const totals = result.totals.map((finalist) => ({
+    displayName: finalist.displayName,
+    finalistId: finalist.id,
+    voteCount: finalist.voteCount,
+  }));
+  const tiedWinners = result.tiedFinalists.map((finalist) => ({
+    displayName: finalist.displayName,
+    finalistId: finalist.id,
+    voteCount: finalist.voteCount,
+  }));
+  const topCount = tiedWinners[0]?.voteCount ?? 0;
+
+  return {
+    status: "published",
+    tallySnapshot: {
+      category: category.title,
+      count: topCount,
+      leader: tiedWinners.map((finalist) => finalist.displayName).join(", "),
+      status: "published",
+      tiedWinners,
+      totals,
+    },
+    winnerFinalistId: null,
+  };
+}
+
 export function createRunoffCategory({
   category,
   tiedFinalists,
