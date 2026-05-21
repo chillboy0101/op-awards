@@ -63,6 +63,20 @@ type PortalResult = {
   awardsEligible?: boolean;
 };
 
+function useAutoDismissMessage(
+  message: string | null,
+  setMessage: (message: string | null) => void,
+  delayMs = 4200,
+) {
+  useEffect(() => {
+    if (!message) return;
+
+    const timer = window.setTimeout(() => setMessage(null), delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [delayMs, message, setMessage]);
+}
+
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 function initials(name: string) {
@@ -734,6 +748,7 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  useAutoDismissMessage(message, setMessage);
 
   function syncRoster() {
     setMessage(null);
@@ -833,6 +848,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  useAutoDismissMessage(message, setMessage);
   const progress = model.progress;
   const canOpenNominations = model.cycle.configuredStage === "Draft";
   const canPublish = model.cycle.stage === "Certification" && !model.hasUnresolvedTies;
@@ -967,6 +983,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const categoryNameInputRef = useRef<HTMLInputElement | null>(null);
   const modalScrollYRef = useRef(0);
   const router = useRouter();
+  useAutoDismissMessage(message, setMessage);
 
   useEffect(() => {
     if (!categoryModalOpen) return;
@@ -1158,6 +1175,7 @@ function CategoryActionRow({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  useAutoDismissMessage(message, setMessage);
 
   function createRunoff() {
     setMessage(null);
@@ -1302,7 +1320,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       <div className="queue-block result-admin-block">
         <div className="queue-head">
           <h3>Private results</h3>
-          <small>{model.hasUnresolvedTies ? "Runoff required" : "Visible to admin only"}</small>
+          {model.hasUnresolvedTies ? <small>Runoff required</small> : null}
         </div>
         <div className="mini-list">
           {model.privateResults.map((result) => (
@@ -1324,7 +1342,6 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
       <div className="queue-block result-admin-block">
         <div className="queue-head">
           <h3>Certification</h3>
-          <small>Runoff or certify after voting</small>
         </div>
         <div className="mini-list">
           {model.categories.map((category) => (

@@ -887,6 +887,10 @@ textarea:focus {
   letter-spacing: 0;
 }
 
+.result-admin-block .queue-head h3 {
+  font-weight: 840;
+}
+
 .queue-head small,
 .review-note {
   color: var(--muted);
