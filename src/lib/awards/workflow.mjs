@@ -100,6 +100,63 @@ export function getIncompleteBallotCategoryTitles(input) {
     .map((category) => category.title ?? "Untitled category");
 }
 
+/**
+ * @param {{
+ *   categories?: Array<{ id: string; active?: boolean; kind?: string; ballotScope?: string }>;
+ *   memberId: string;
+ *   nominations?: Array<{ categoryId: string; nominatorId: string }>;
+ * }} input
+ * @returns {string[]}
+ */
+export function getSubmittedNominationCategoryIds({ categories = [], memberId, nominations = [] }) {
+  const activeCategoryIds = new Set(
+    categories
+      .filter(
+        (category) =>
+          category.active !== false &&
+          (category.kind ?? "standard") !== "runoff" &&
+          (category.ballotScope ?? "main") === "main",
+      )
+      .map((category) => category.id),
+  );
+  const submittedCategoryIds = new Set(
+    nominations
+      .filter((nomination) => nomination.nominatorId === memberId)
+      .filter((nomination) => activeCategoryIds.has(nomination.categoryId))
+      .map((nomination) => nomination.categoryId),
+  );
+
+  return categories
+    .map((category) => category.id)
+    .filter((categoryId) => submittedCategoryIds.has(categoryId));
+}
+
+/**
+ * @param {{
+ *   categories?: Array<{ id: string; active?: boolean; kind?: string; ballotScope?: string }>;
+ *   memberId: string;
+ *   nominations?: Array<{ categoryId: string; nominatorId: string }>;
+ * }} input
+ * @returns {boolean}
+ */
+export function hasSubmittedCompleteNominationBallot(input) {
+  const categories = input.categories ?? [];
+  const activeCategoryIds = categories
+    .filter(
+      (category) =>
+        category.active !== false &&
+        (category.kind ?? "standard") !== "runoff" &&
+        (category.ballotScope ?? "main") === "main",
+    )
+    .map((category) => category.id);
+
+  if (activeCategoryIds.length === 0) return false;
+
+  const submittedCategoryIds = getSubmittedNominationCategoryIds(input);
+
+  return activeCategoryIds.every((categoryId) => submittedCategoryIds.includes(categoryId));
+}
+
 export function groupNominationsByNominator(input) {
   const categories = input?.categories ?? [];
   const members = input?.members ?? [];

@@ -383,7 +383,7 @@ function nominationValidationMessage(reason?: string) {
   }
 
   if (reason === "CATEGORY_NOMINATION_LIMIT_REACHED") {
-    return "You already nominated in one of these categories.";
+    return "You already submitted nominations.";
   }
 
   if (reason === "NOMINEE_NOT_ACTIVE_MEMBER") {

@@ -14,11 +14,13 @@ import {
   getIncompleteBallotCategoryTitles,
   getNominationSupportThreshold,
   getResetCategoryIds,
+  getSubmittedNominationCategoryIds,
   getUnresolvedTieCategoryIds,
   groupNominationsByNominator,
   recordAnonymousVotes,
   suggestFinalists,
   toggleSelection,
+  hasSubmittedCompleteNominationBallot,
   validateNominationBatch,
   validateBallotSelections,
   validateCategorySetup,
@@ -229,6 +231,44 @@ describe("nomination ballot", () => {
           { categoryId: "cat-service", nomineeId: "mem-4", statement: "" },
         ],
       },
+    );
+  });
+
+  it("detects when a member has already submitted every active nomination category", () => {
+    const submittedCategoryIds = getSubmittedNominationCategoryIds({
+      categories: [
+        ...categories,
+        { id: "cat-hidden", title: "Hidden", active: false, nominationLimit: 1 },
+      ],
+      memberId: "mem-1",
+      nominations: [
+        { id: "nom-1", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-1" },
+        { id: "nom-2", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-1" },
+        { id: "nom-3", categoryId: "cat-hidden", nomineeId: "mem-4", nominatorId: "mem-1" },
+      ],
+    });
+
+    assert.deepEqual(submittedCategoryIds, ["cat-leadership", "cat-service"]);
+    assert.equal(
+      hasSubmittedCompleteNominationBallot({
+        categories,
+        memberId: "mem-1",
+        nominations: [
+          { id: "nom-1", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-1" },
+          { id: "nom-2", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-1" },
+        ],
+      }),
+      true,
+    );
+    assert.equal(
+      hasSubmittedCompleteNominationBallot({
+        categories,
+        memberId: "mem-2",
+        nominations: [
+          { id: "nom-1", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-2" },
+        ],
+      }),
+      false,
     );
   });
 });

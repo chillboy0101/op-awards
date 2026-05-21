@@ -26,7 +26,9 @@ import {
   buildNominationDirectory,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
+  getSubmittedNominationCategoryIds,
   groupNominationsByNominator,
+  hasSubmittedCompleteNominationBallot,
   toggleSelection,
 } from "@/lib/awards/workflow.mjs";
 import type { Category, Finalist, Member } from "@/lib/awards/data";
@@ -264,39 +266,6 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
   );
 }
 
-function CategoryPicker({
-  categories,
-  completedCategoryIds = new Set<string>(),
-  selectedCategory,
-  setSelectedCategory,
-}: {
-  categories: Category[];
-  completedCategoryIds?: Set<string>;
-  selectedCategory: string;
-  setSelectedCategory: (categoryId: string) => void;
-}) {
-  return (
-    <div className="chip-row" aria-label="Award categories">
-      {categories.map((category) => (
-        <button
-          className={[
-            "choice-chip",
-            selectedCategory === category.id ? "is-selected" : "",
-            completedCategoryIds.has(category.id) ? "has-selection" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          key={category.id}
-          onClick={() => setSelectedCategory(category.id)}
-          type="button"
-        >
-          {category.title}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function MemberDirectory({
   currentMemberId,
   members,
@@ -360,34 +329,69 @@ function NominationExperience({
   currentUser: CurrentUser;
   model: AwardPortalModel;
 }) {
-  const activeCategories = model.categories.filter((category) => category.active);
-  const firstCategoryId = activeCategories[0]?.id ?? "";
-  const [selectedCategory, setSelectedCategory] = useState(firstCategoryId);
+  const activeCategories = model.categories.filter(
+    (category) =>
+      category.active &&
+      category.kind !== "runoff" &&
+      (category.ballotScope ?? "main") === "main",
+  );
+  const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
   const [nominationDrafts, setNominationDrafts] = useState<Record<string, NominationDraft>>({});
+  const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const selectedDraft = nominationDrafts[selectedCategory] ?? { nomineeId: "", statement: "" };
-  const completedCategoryIds = new Set(
-    activeCategories
+  const safeCategoryIndex = Math.min(
+    currentCategoryIndex,
+    Math.max(activeCategories.length - 1, 0),
+  );
+  const currentCategory = activeCategories[safeCategoryIndex];
+  const selectedDraft = currentCategory
+    ? nominationDrafts[currentCategory.id] ?? { nomineeId: "", statement: "" }
+    : { nomineeId: "", statement: "" };
+  const submittedCategoryIds = getSubmittedNominationCategoryIds({
+    categories: activeCategories,
+    memberId: currentUser.member.id,
+    nominations: model.nominations,
+  });
+  const hasSubmittedNominations =
+    submitted ||
+    hasSubmittedCompleteNominationBallot({
+      categories: activeCategories,
+      memberId: currentUser.member.id,
+      nominations: model.nominations,
+    });
+  const completedCategoryIds = new Set([
+    ...submittedCategoryIds,
+    ...activeCategories
       .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
       .map((category) => category.id),
-  );
-  const heading =
-    activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
+  ]);
+  const heading = activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
   const allCategoriesSelected =
     activeCategories.length > 0 &&
     activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
 
-  function updateDraft(categoryId: string, patch: Partial<NominationDraft>) {
+  function goToCategory(index: number) {
+    setMessage(null);
+    setCurrentCategoryIndex(Math.min(Math.max(index, 0), activeCategories.length - 1));
+  }
+
+  function selectNominee(categoryId: string, nomineeId: string) {
+    setMessage(null);
+    const nextNomineeId = toggleSelection(nominationDrafts[categoryId]?.nomineeId ?? "", nomineeId);
+
     setNominationDrafts((current) => ({
       ...current,
       [categoryId]: {
-        nomineeId: current[categoryId]?.nomineeId ?? "",
         statement: current[categoryId]?.statement ?? "",
-        ...patch,
+        nomineeId: nextNomineeId,
       },
     }));
+
+    if (nextNomineeId && safeCategoryIndex < activeCategories.length - 1) {
+      setCurrentCategoryIndex(safeCategoryIndex + 1);
+    }
   }
 
   function submitNomination() {
@@ -397,15 +401,12 @@ function NominationExperience({
         nominations: activeCategories.map((category) => ({
           categoryId: category.id,
           nomineeId: nominationDrafts[category.id]?.nomineeId ?? "",
-          statement: nominationDrafts[category.id]?.statement ?? "",
+          statement: "",
         })),
       })) as PortalResult;
 
-      setMessage(
-        result.ok
-          ? `Saved ${result.count ?? activeCategories.length} nominations.`
-          : result.error ?? "Unable to save.",
-      );
+      setMessage(result.ok ? null : result.error ?? "Unable to save.");
+      if (result.ok) setSubmitted(true);
       if (result.ok) router.refresh();
     });
   }
@@ -414,41 +415,66 @@ function NominationExperience({
     <section className="panel work-panel">
       <div className="panel-head">
         <div>
+          <p className="eyebrow">Nomination</p>
           <h2>{heading}</h2>
         </div>
+        <StagePill stage={`${completedCategoryIds.size}/${activeCategories.length} selected`} />
       </div>
-      <CategoryPicker
-        categories={activeCategories}
-        completedCategoryIds={completedCategoryIds}
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-      />
+      {hasSubmittedNominations ? (
+        <div className="notice good">
+          Nominations submitted. Voting opens when every eligible member has submitted.
+        </div>
+      ) : null}
       {activeCategories.length === 0 ? <EmptyState message="No active categories yet." /> : null}
-      <MemberDirectory
-        currentMemberId={currentUser.member.id}
-        members={model.members}
-        selectedNominee={selectedDraft.nomineeId}
-        setSelectedNominee={(memberId) => updateDraft(selectedCategory, { nomineeId: memberId })}
-      />
-      <label>
-        <span>Reason (optional)</span>
-        <textarea
-          onChange={(event) => updateDraft(selectedCategory, { statement: event.target.value })}
-          rows={4}
-          value={selectedDraft.statement}
-        />
-      </label>
-      <div className="selection-count">
-        {completedCategoryIds.size}/{activeCategories.length} categories selected
-      </div>
-      <button
-        className="primary-action"
-        disabled={!allCategoriesSelected || pending}
-        onClick={submitNomination}
-        type="button"
-      >
-        {pending ? "Saving" : "Submit nominations"}
-      </button>
+      {!hasSubmittedNominations && currentCategory ? (
+        <>
+          <section className="ballot-category guided-ballot" key={currentCategory.id}>
+            <div className="ballot-category-head">
+              <span>
+                Category {safeCategoryIndex + 1} of {activeCategories.length}
+              </span>
+              <strong>{currentCategory.title}</strong>
+            </div>
+            <MemberDirectory
+              currentMemberId={currentUser.member.id}
+              members={model.members}
+              selectedNominee={selectedDraft.nomineeId}
+              setSelectedNominee={(memberId) => selectNominee(currentCategory.id, memberId)}
+            />
+          </section>
+          <div className="ballot-stepper" aria-label="Nomination category navigation">
+            <button
+              className="secondary-action"
+              disabled={safeCategoryIndex === 0 || pending}
+              onClick={() => goToCategory(safeCategoryIndex - 1)}
+              type="button"
+            >
+              Previous
+            </button>
+            <span className="selection-count">
+              {completedCategoryIds.size}/{activeCategories.length} selected
+            </span>
+            <button
+              className="secondary-action"
+              disabled={safeCategoryIndex >= activeCategories.length - 1 || pending}
+              onClick={() => goToCategory(safeCategoryIndex + 1)}
+              type="button"
+            >
+              Next
+            </button>
+          </div>
+          {allCategoriesSelected ? (
+            <button
+              className="primary-action"
+              disabled={pending}
+              onClick={submitNomination}
+              type="button"
+            >
+              {pending ? "Submitting" : "Submit nominations"}
+            </button>
+          ) : null}
+        </>
+      ) : null}
       {message ? <div className="notice">{message}</div> : null}
     </section>
   );
@@ -602,7 +628,7 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       </div>
       {submittedReceipt ? (
         <div className="notice good">
-          Your ballot has been submitted. Receipt {submittedReceipt}
+          Voting submitted. Results will be available after voting closes and admin publishes winners. Receipt {submittedReceipt}
         </div>
       ) : null}
       {categoriesWithFinalists.length === 0 ? <EmptyState message="No ballot is ready yet." /> : null}
@@ -1225,9 +1251,6 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
                       <div className="nomination-choice" key={nomination.id}>
                         <strong>{nomination.categoryTitle}</strong>
                         <small>{nomination.nomineeName}</small>
-                        {nomination.statement ? (
-                          <small className="review-note">{nomination.statement}</small>
-                        ) : null}
                       </div>
                     ))}
                   </div>
