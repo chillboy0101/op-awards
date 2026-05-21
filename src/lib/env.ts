@@ -6,15 +6,11 @@ const serverEnvSchema = z.object({
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
   CLERK_ALLOWED_ORG_ID: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional(),
-  CLOUDINARY_API_KEY: z.string().optional(),
-  CLOUDINARY_API_SECRET: z.string().optional(),
-  CLOUDINARY_CLOUD_NAME: z.string().optional(),
   DATABASE_URL: z.string().url().optional(),
   EMAIL_FROM: z.string().default("O&P Awards <awards@example.com>"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().default("/sign-in"),
   NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string().default("/sign-up"),
-  NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
 });
 

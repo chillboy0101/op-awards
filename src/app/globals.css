@@ -42,6 +42,26 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nav-pending {
+  from {
+    transform: translateX(-70%);
+  }
+  to {
+    transform: translateX(70%);
+  }
+}
+
 button,
 input,
 select,
@@ -71,6 +91,7 @@ a {
 }
 
 .topbar {
+  view-transition-name: op-awards-topbar;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -143,10 +164,12 @@ a {
 
 .nav-links a,
 .text-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 36px;
+  overflow: hidden;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -155,6 +178,11 @@ a {
   font-size: 0.88rem;
   font-weight: 720;
   white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
 }
 
 .nav-links .is-active,
@@ -162,6 +190,27 @@ a {
   background: var(--surface);
   color: var(--foreground);
   box-shadow: 0 5px 14px rgba(30, 41, 59, 0.08);
+}
+
+.nav-links a:hover {
+  color: var(--foreground);
+  transform: translateY(-1px);
+}
+
+.nav-links a:active {
+  transform: translateY(0);
+}
+
+.nav-links a.is-pending::after {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  left: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent-strong), transparent);
+  content: "";
+  animation: nav-pending 700ms ease-in-out infinite;
 }
 
 .hero-panel,
@@ -881,7 +930,24 @@ textarea:focus {
   margin-top: 16px;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .app-shell {
+    animation: page-enter 170ms ease both;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .nav-links a,
+  .text-button {
+    animation: none;
+    transition: none;
+  }
+
+  .nav-links a:hover {
+    transform: none;
+  }
+
   .confetti {
     animation: none;
     opacity: 0.75;

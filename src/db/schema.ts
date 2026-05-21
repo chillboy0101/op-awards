@@ -54,7 +54,6 @@ export const members = pgTable(
     awardsEligible: boolean("awards_eligible").notNull().default(true),
     joinedYear: text("joined_year"),
     photoUrl: text("photo_url"),
-    photoAssetId: text("photo_asset_id"),
     ...timestamps,
   },
   (table) => ({
@@ -225,17 +224,6 @@ export const resultCertifications = pgTable("result_certifications", {
   certifiedByStaffId: uuid("certified_by_staff_id").references(() => staffUsers.id),
   certifiedAt: timestamp("certified_at", { withTimezone: true }),
   publishedAt: timestamp("published_at", { withTimezone: true }),
-  ...timestamps,
-});
-
-export const cloudinaryAssets = pgTable("cloudinary_assets", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  assetId: text("asset_id").notNull(),
-  publicId: text("public_id").notNull(),
-  secureUrl: text("secure_url").notNull(),
-  resourceType: text("resource_type").notNull().default("image"),
-  memberId: uuid("member_id").references(() => members.id, { onDelete: "set null" }),
-  uploadedByStaffId: uuid("uploaded_by_staff_id").references(() => staffUsers.id),
   ...timestamps,
 });
 

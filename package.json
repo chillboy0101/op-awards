@@ -16,11 +16,9 @@
   "dependencies": {
     "@clerk/nextjs": "^7.3.7",
     "@neondatabase/serverless": "^1.1.0",
-    "cloudinary": "^2.10.0",
     "drizzle-orm": "^0.45.2",
     "nanoid": "^5.1.11",
     "next": "16.2.6",
-    "next-cloudinary": "^6.17.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.3",

@@ -3,8 +3,8 @@
 import { SignOutButton } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import {
   approveAllFinalistsAction,
@@ -30,6 +30,11 @@ import type { CurrentUser } from "@/lib/auth/service";
 type VoteSelections = Record<string, string>;
 type DirectoryMember = Member & { isSelf: boolean; selectable: boolean };
 type NominationDraft = { nomineeId: string; statement: string };
+type HeaderNavItem = {
+  active: boolean;
+  href: string;
+  label: string;
+};
 type PortalResult = {
   count?: number;
   demo?: boolean;
@@ -100,23 +105,62 @@ function Header({
 }: {
   active: "admin" | "member" | "public";
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  const navItems = useMemo<HeaderNavItem[]>(() => {
+    const items = [
+      { active: active === "public", href: "/", label: "Public" },
+      { active: active === "member", href: "/member", label: "Awards Portal" },
+    ];
+
+    if (active === "admin") {
+      items.push({ active: true, href: "/admin", label: "Admin" });
+    }
+
+    return items;
+  }, [active]);
+
+  useEffect(() => {
+    for (const item of navItems) {
+      router.prefetch(item.href);
+    }
+  }, [navItems, router]);
+
+  const visiblePendingHref = pendingHref === pathname ? null : pendingHref;
+
+  function prefetch(href: string) {
+    router.prefetch(href);
+  }
+
   return (
     <header className="topbar">
       <Link className="brand" href="/" aria-label="O&P Awards home">
         <Mark />
       </Link>
       <nav className="nav-links" aria-label="O&P Awards navigation">
-        <Link className={active === "public" ? "is-active" : ""} href="/">
-          Public
-        </Link>
-        <Link className={active === "member" ? "is-active" : ""} href="/member">
-          Awards Portal
-        </Link>
-        {active === "admin" ? (
-          <Link className={active === "admin" ? "is-active" : ""} href="/admin">
-            Admin
+        {navItems.map((item) => (
+          <Link
+            aria-current={item.active ? "page" : undefined}
+            className={[
+              item.active ? "is-active" : "",
+              visiblePendingHref === item.href ? "is-pending" : "",
+            ].filter(Boolean).join(" ")}
+            href={item.href}
+            key={item.href}
+            onClick={() => {
+              if (pathname !== item.href) {
+                setPendingHref(item.href);
+              }
+            }}
+            onFocus={() => prefetch(item.href)}
+            onMouseEnter={() => prefetch(item.href)}
+            prefetch
+          >
+            {item.label}
           </Link>
-        ) : null}
+        ))}
       </nav>
     </header>
   );
