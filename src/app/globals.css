@@ -654,25 +654,8 @@ textarea:focus {
   min-width: 0;
 }
 
-.category-complete-check {
-  display: inline-grid;
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 2px solid #ffffff;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 8px 18px rgba(12, 73, 65, 0.2);
-}
-
-.category-complete-check::before {
-  width: 12px;
-  height: 7px;
-  border-bottom: 2px solid #ffffff;
-  border-left: 2px solid #ffffff;
-  content: "";
-  transform: translateY(-1px) rotate(-45deg);
+.ballot-category-title.is-completed strong {
+  color: var(--accent);
 }
 
 .people-list,

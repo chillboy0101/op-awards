@@ -65,10 +65,6 @@ type PortalResult = {
 };
 type CelebrationMotionStyle = CSSProperties & Record<`--${string}`, string>;
 
-function CategoryCompletionTick() {
-  return <span aria-label="Category selected" className="category-complete-check" role="img" />;
-}
-
 function CategoryHeader({
   categoryCount,
   categoryIndex,
@@ -115,9 +111,8 @@ function CategoryHeader({
         <span>
           Category {categoryIndex + 1} of {categoryCount}
         </span>
-        <div className="ballot-category-title">
+        <div className={completed ? "ballot-category-title is-completed" : "ballot-category-title"}>
           <strong>{title}</strong>
-          {completed ? <CategoryCompletionTick /> : null}
         </div>
       </div>
       <button
