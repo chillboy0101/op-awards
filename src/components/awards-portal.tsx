@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, PointerEvent, RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -64,6 +64,113 @@ type PortalResult = {
   awardsEligible?: boolean;
 };
 type CelebrationMotionStyle = CSSProperties & Record<`--${string}`, string>;
+type SwipeStart = {
+  pointerId: number;
+  x: number;
+  y: number;
+};
+
+function isInteractiveSwipeTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        "a, button, input, textarea, select, [contenteditable='true'], [role='button']",
+      ),
+    )
+  );
+}
+
+function isMobileSwipeViewport() {
+  return window.matchMedia("(pointer: coarse), (max-width: 760px)").matches;
+}
+
+function useMobileCategorySwipe({
+  enabled,
+  onNext,
+  onPrevious,
+}: {
+  enabled: boolean;
+  onNext: () => void;
+  onPrevious: () => void;
+}) {
+  const startRef = useRef<SwipeStart | null>(null);
+
+  const onPointerDown = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      if (
+        !enabled ||
+        !isMobileSwipeViewport() ||
+        event.isPrimary === false ||
+        isInteractiveSwipeTarget(event.target)
+      ) {
+        return;
+      }
+
+      startRef.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [enabled],
+  );
+
+  const finishSwipe = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      const start = startRef.current;
+      startRef.current = null;
+
+      if (!enabled || !start) return;
+
+      try {
+        event.currentTarget.releasePointerCapture?.(start.pointerId);
+      } catch {
+        // The browser may already have released capture when the gesture ends.
+      }
+
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      const horizontalDistance = Math.abs(deltaX);
+      const verticalDistance = Math.abs(deltaY);
+
+      if (
+        horizontalDistance < 56 ||
+        horizontalDistance < verticalDistance * 1.35 ||
+        verticalDistance > 96
+      ) {
+        return;
+      }
+
+      if (deltaX < 0) {
+        onNext();
+      } else {
+        onPrevious();
+      }
+    },
+    [enabled, onNext, onPrevious],
+  );
+
+  const cancelSwipe = useCallback((event: PointerEvent<HTMLElement>) => {
+    const start = startRef.current;
+    startRef.current = null;
+
+    if (!start) return;
+
+    try {
+      event.currentTarget.releasePointerCapture?.(start.pointerId);
+    } catch {
+      // Ignore browsers that release capture automatically.
+    }
+  }, []);
+
+  return {
+    onPointerCancel: cancelSwipe,
+    onPointerDown,
+    onPointerUp: finishSwipe,
+  };
+}
 
 function CategoryHeader({
   categoryCount,
@@ -602,8 +709,14 @@ function NominationExperience({
     });
   }
 
+  const swipeHandlers = useMobileCategorySwipe({
+    enabled: !hasSubmittedNominations && activeCategories.length > 1 && Boolean(currentCategory),
+    onNext: () => goToCategory(safeCategoryIndex + 1),
+    onPrevious: () => goToCategory(safeCategoryIndex - 1),
+  });
+
   return (
-    <section className="panel work-panel">
+    <section className="panel work-panel swipe-category-zone" {...swipeHandlers}>
       {hasSubmittedNominations ? (
         <div className="notice good">
           Nominations submitted. Voting opens when every eligible member has submitted.
@@ -836,8 +949,14 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     });
   }
 
+  const swipeHandlers = useMobileCategorySwipe({
+    enabled: !submittedReceipt && categoriesWithFinalists.length > 1 && Boolean(currentCategory),
+    onNext: () => goToCategory(safeCategoryIndex + 1),
+    onPrevious: () => goToCategory(safeCategoryIndex - 1),
+  });
+
   return (
-    <section className="panel work-panel">
+    <section className="panel work-panel swipe-category-zone" {...swipeHandlers}>
       <div className="panel-head">
         <div>
           <p className="eyebrow">Ballot</p>
