@@ -564,6 +564,9 @@ function NominationExperience({
               setSelectedNominee={(memberId) => selectNominee(currentCategory.id, memberId)}
             />
           </section>
+          <div className="selection-summary" aria-live="polite">
+            {completedCategoryIds.size}/{activeCategories.length} selected
+          </div>
           <div className="ballot-stepper" aria-label="Nomination category navigation">
             <button
               className="secondary-action"
@@ -573,9 +576,6 @@ function NominationExperience({
             >
               Previous
             </button>
-            <span className="selection-count">
-              {completedCategoryIds.size}/{activeCategories.length} selected
-            </span>
             <button
               className="secondary-action"
               disabled={safeCategoryIndex >= activeCategories.length - 1 || pending}
@@ -801,6 +801,9 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               ))}
             </div>
           </section>
+          <div className="selection-summary" aria-live="polite">
+            {completedCount}/{categoriesWithFinalists.length} categories selected
+          </div>
           <div className="ballot-stepper" aria-label="Ballot category navigation">
             <button
               className="secondary-action"
@@ -808,18 +811,15 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               onClick={() => goToCategory(safeCategoryIndex - 1)}
               type="button"
             >
-              ← Previous
+              Previous
             </button>
-            <span className="selection-count">
-              {completedCount}/{categoriesWithFinalists.length} categories selected
-            </span>
             <button
               className="secondary-action"
               disabled={safeCategoryIndex >= categoriesWithFinalists.length - 1 || pending}
               onClick={() => goToCategory(safeCategoryIndex + 1)}
               type="button"
             >
-              Next →
+              Next
             </button>
           </div>
           <button

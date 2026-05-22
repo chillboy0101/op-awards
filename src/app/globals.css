@@ -600,12 +600,6 @@ textarea:focus {
   box-shadow: inset 0 0 0 1px rgba(23, 107, 96, 0.16);
 }
 
-.selection-count {
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 680;
-}
-
 .people-list,
 .finalist-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -714,9 +708,11 @@ textarea:focus {
   gap: 12px;
 }
 
-.ballot-stepper .selection-count {
-  flex: 1;
-  text-align: center;
+.selection-summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 720;
+  text-align: right;
 }
 
 .notice,
@@ -1311,13 +1307,9 @@ textarea:focus {
 
   .ballot-stepper {
     align-items: stretch;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
   }
 
-  .ballot-stepper .selection-count {
-    grid-column: 1 / -1;
-    grid-row: 1;
+  .selection-summary {
     text-align: left;
   }
 
