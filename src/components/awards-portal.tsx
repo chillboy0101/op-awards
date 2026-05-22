@@ -525,8 +525,20 @@ function NominationExperience({
 
   const focusCategoryHeader = useCallback(() => {
     window.requestAnimationFrame(() => {
-      categoryHeaderRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-      categoryHeaderRef.current?.focus({ preventScroll: true });
+      const header = categoryHeaderRef.current;
+      if (!header) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const topbarBottom =
+        document.querySelector(".topbar")?.getBoundingClientRect().bottom ?? 0;
+      const headerIsVisible =
+        headerRect.top >= topbarBottom && headerRect.bottom <= window.innerHeight;
+
+      if (!headerIsVisible) {
+        header.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      header.focus({ preventScroll: true });
     });
   }, []);
 
@@ -725,8 +737,20 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
 
   const focusCategoryHeader = useCallback(() => {
     window.requestAnimationFrame(() => {
-      categoryHeaderRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-      categoryHeaderRef.current?.focus({ preventScroll: true });
+      const header = categoryHeaderRef.current;
+      if (!header) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const topbarBottom =
+        document.querySelector(".topbar")?.getBoundingClientRect().bottom ?? 0;
+      const headerIsVisible =
+        headerRect.top >= topbarBottom && headerRect.bottom <= window.innerHeight;
+
+      if (!headerIsVisible) {
+        header.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      header.focus({ preventScroll: true });
     });
   }, []);
 
