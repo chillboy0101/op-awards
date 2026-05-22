@@ -1,9 +1,10 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { getDb, hasDatabaseUrl, schema } from "@/db";
@@ -290,7 +291,6 @@ export async function prepareDraftFinalistsForCycle(cycleId: string) {
     const categoryDrafts = drafts.filter((draft) => draft.categoryId === category.id);
     if (categoryDrafts.length === 0) continue;
 
-    await db.delete(schema.finalists).where(eq(schema.finalists.categoryId, category.id));
     await db.insert(schema.finalists).values(
       categoryDrafts.map((draft) => ({
         approvedAt: draft.status === "approved" ? new Date() : null,
@@ -301,7 +301,17 @@ export async function prepareDraftFinalistsForCycle(cycleId: string) {
         status: draft.status,
         summary: draft.summary,
       })),
-    );
+    ).onConflictDoUpdate({
+      target: [schema.finalists.categoryId, schema.finalists.nomineeId],
+      set: {
+        approvedAt: sql`excluded.approved_at`,
+        displayName: sql`excluded.display_name`,
+        nominationCount: sql`excluded.nomination_count`,
+        status: sql`excluded.status`,
+        summary: sql`excluded.summary`,
+        updatedAt: new Date(),
+      },
+    });
     if (categoryDrafts.some((draft) => draft.status === "approved")) {
       approvedCategoryIds.add(category.id);
     }
@@ -551,7 +561,26 @@ export async function createNominationsAction(input: unknown) {
     })),
   );
 
-  await prepareDraftFinalistsForCycle(cycle.id);
+  const nextProgress = getCycleProgress({
+    ballotScope: "main",
+    categories: cycleCategories,
+    members,
+    nominations: [
+      ...existingNominations,
+      ...validatedNominations.map((nomination) => ({
+        categoryId: nomination.categoryId,
+        nominatorId: user.member.id,
+      })),
+    ],
+    voteReceipts: [],
+  });
+
+  if (
+    nextProgress.eligibleMemberCount > 0 &&
+    nextProgress.nominationCompletionCount >= nextProgress.eligibleMemberCount
+  ) {
+    await prepareDraftFinalistsForCycle(cycle.id);
+  }
 
   revalidateAwardPages();
 
@@ -622,13 +651,23 @@ export async function submitBallotAction(input: unknown) {
   }
 
   try {
-    await db.insert(schema.voteReceipts).values({
-      ballotScope,
-      categoryIds: ballotValidation.categoryIds,
-      confirmationCode,
-      cycleId: parsed.data.cycleId,
-      memberId: user.member.id,
-    });
+    await db.batch([
+      db.insert(schema.voteReceipts).values({
+        ballotScope,
+        categoryIds: ballotValidation.categoryIds,
+        confirmationCode,
+        cycleId: parsed.data.cycleId,
+        memberId: user.member.id,
+      }),
+      db.insert(schema.anonymousVotes).values(
+        Object.entries(parsed.data.selections).map(([categoryId, finalistId]) => ({
+          ballotScope,
+          categoryId,
+          cycleId: parsed.data.cycleId,
+          finalistId,
+        })),
+      ),
+    ]);
   } catch (error) {
     if (error instanceof Error && error.message.includes("vote_receipts_cycle_member_unique")) {
       return { ok: false, error: "You already submitted this ballot." };
@@ -637,18 +676,15 @@ export async function submitBallotAction(input: unknown) {
     throw error;
   }
 
-  await db.insert(schema.anonymousVotes).values(
-    Object.entries(parsed.data.selections).map(([categoryId, finalistId]) => ({
-      ballotScope,
-      categoryId,
-      cycleId: parsed.data.cycleId,
-      finalistId,
-    })),
-  );
-
-  await sendVoteReceiptEmail({
-    confirmationCode,
-    email: user.member.email,
+  after(async () => {
+    try {
+      await sendVoteReceiptEmail({
+        confirmationCode,
+        email: user.member.email,
+      });
+    } catch {
+      // Voting is already recorded; a receipt email retry can happen outside the request.
+    }
   });
 
   revalidateAwardPages();
