@@ -65,6 +65,59 @@ type PortalResult = {
 };
 type CelebrationMotionStyle = CSSProperties & Record<`--${string}`, string>;
 
+function CategoryCompletionTick() {
+  return <span aria-label="Category selected" className="category-complete-check" role="img" />;
+}
+
+function CategoryNavigationArrows({
+  disabled,
+  nextDisabled,
+  nextGlows,
+  onNext,
+  onPrevious,
+  previousDisabled,
+  previousGlows,
+}: {
+  disabled: boolean;
+  nextDisabled: boolean;
+  nextGlows: boolean;
+  onNext: () => void;
+  onPrevious: () => void;
+  previousDisabled: boolean;
+  previousGlows: boolean;
+}) {
+  return (
+    <div aria-label="Category navigation" className="floating-category-nav">
+      <button
+        aria-label="Previous category"
+        className={[
+          "floating-category-arrow",
+          "is-left",
+          previousGlows ? "is-guiding" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        disabled={disabled || previousDisabled}
+        onClick={onPrevious}
+        type="button"
+      />
+      <button
+        aria-label="Next category"
+        className={[
+          "floating-category-arrow",
+          "is-right",
+          nextGlows ? "is-guiding" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        disabled={disabled || nextDisabled}
+        onClick={onNext}
+        type="button"
+      />
+    </div>
+  );
+}
+
 function useAutoDismissMessage(
   message: string | null,
   setMessage: (message: string | null) => void,
@@ -462,7 +515,10 @@ function NominationExperience({
       memberId: currentUser.member.id,
       nominations: model.nominations,
     });
-  const heading = activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
+  const currentCategoryHasSelection = Boolean(selectedDraft.nomineeId);
+  const hasIncompletePreviousCategory = activeCategories
+    .slice(0, safeCategoryIndex)
+    .some((category) => !nominationDrafts[category.id]?.nomineeId);
   const allCategoriesSelected =
     activeCategories.length > 0 &&
     activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
@@ -522,12 +578,6 @@ function NominationExperience({
 
   return (
     <section className="panel work-panel">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Nomination</p>
-          <h2>{heading}</h2>
-        </div>
-      </div>
       {hasSubmittedNominations ? (
         <div className="notice good">
           Nominations submitted. Voting opens when every eligible member has submitted.
@@ -541,7 +591,10 @@ function NominationExperience({
               <span>
                 Category {safeCategoryIndex + 1} of {activeCategories.length}
               </span>
-              <strong>{currentCategory.title}</strong>
+              <div className="ballot-category-title">
+                <strong>{currentCategory.title}</strong>
+                {currentCategoryHasSelection ? <CategoryCompletionTick /> : null}
+              </div>
             </div>
             <MemberDirectory
               currentMemberId={currentUser.member.id}
@@ -550,27 +603,18 @@ function NominationExperience({
               setSelectedNominee={(memberId) => selectNominee(currentCategory.id, memberId)}
             />
           </section>
-          <div className="ballot-stepper" aria-label="Nomination category navigation">
-            <button
-              className="secondary-action"
-              disabled={safeCategoryIndex === 0 || pending}
-              onClick={() => goToCategory(safeCategoryIndex - 1)}
-              type="button"
-            >
-              Previous
-            </button>
-            <button
-              className="secondary-action"
-              disabled={safeCategoryIndex >= activeCategories.length - 1 || pending}
-              onClick={() => goToCategory(safeCategoryIndex + 1)}
-              type="button"
-            >
-              Next
-            </button>
-          </div>
+          <CategoryNavigationArrows
+            disabled={pending}
+            nextDisabled={safeCategoryIndex >= activeCategories.length - 1}
+            nextGlows={currentCategoryHasSelection && safeCategoryIndex < activeCategories.length - 1}
+            onNext={() => goToCategory(safeCategoryIndex + 1)}
+            onPrevious={() => goToCategory(safeCategoryIndex - 1)}
+            previousDisabled={safeCategoryIndex === 0}
+            previousGlows={hasIncompletePreviousCategory}
+          />
           {allCategoriesSelected ? (
             <button
-              className="primary-action"
+              className="primary-action is-ready"
               disabled={pending}
               onClick={submitNomination}
               type="button"
@@ -669,6 +713,15 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     [currentCategory, visibleFinalists],
   );
   const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
+  const currentCategoryHasSelection = Boolean(
+    currentCategory && selections[currentCategory.id],
+  );
+  const hasIncompletePreviousCategory = categoriesWithFinalists
+    .slice(0, safeCategoryIndex)
+    .some((category) => !selections[category.id]);
+  const allBallotCategoriesSelected =
+    categoriesWithFinalists.length > 0 &&
+    categoriesWithFinalists.every((category) => Boolean(selections[category.id]));
 
   const focusCategoryHeader = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -770,7 +823,10 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               <span>
                 Category {safeCategoryIndex + 1} of {categoriesWithFinalists.length}
               </span>
-              <strong>{currentCategory.title}</strong>
+              <div className="ballot-category-title">
+                <strong>{currentCategory.title}</strong>
+                {currentCategoryHasSelection ? <CategoryCompletionTick /> : null}
+              </div>
             </div>
             <div className="finalist-grid">
               {currentFinalists.map((finalist) => (
@@ -785,26 +841,22 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               ))}
             </div>
           </section>
-          <div className="ballot-stepper" aria-label="Ballot category navigation">
-            <button
-              className="secondary-action"
-              disabled={safeCategoryIndex === 0 || pending}
-              onClick={() => goToCategory(safeCategoryIndex - 1)}
-              type="button"
-            >
-              Previous
-            </button>
-            <button
-              className="secondary-action"
-              disabled={safeCategoryIndex >= categoriesWithFinalists.length - 1 || pending}
-              onClick={() => goToCategory(safeCategoryIndex + 1)}
-              type="button"
-            >
-              Next
-            </button>
-          </div>
+          <CategoryNavigationArrows
+            disabled={pending}
+            nextDisabled={safeCategoryIndex >= categoriesWithFinalists.length - 1}
+            nextGlows={
+              currentCategoryHasSelection &&
+              safeCategoryIndex < categoriesWithFinalists.length - 1
+            }
+            onNext={() => goToCategory(safeCategoryIndex + 1)}
+            onPrevious={() => goToCategory(safeCategoryIndex - 1)}
+            previousDisabled={safeCategoryIndex === 0}
+            previousGlows={hasIncompletePreviousCategory}
+          />
           <button
-            className="primary-action"
+            className={["primary-action", allBallotCategoriesSelected ? "is-ready" : ""]
+              .filter(Boolean)
+              .join(" ")}
             disabled={categoriesWithFinalists.length === 0 || pending}
             onClick={submitBallot}
             type="button"

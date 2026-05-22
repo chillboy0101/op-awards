@@ -60,6 +60,20 @@ body {
   }
 }
 
+@keyframes action-ready-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 12px 26px rgba(12, 73, 65, 0.16),
+      0 0 0 0 rgba(23, 107, 96, 0.24);
+  }
+  50% {
+    box-shadow:
+      0 14px 32px rgba(12, 73, 65, 0.22),
+      0 0 0 9px rgba(23, 107, 96, 0.13);
+  }
+}
+
 button,
 input,
 select,
@@ -381,6 +395,10 @@ a {
   color: #ffffff;
 }
 
+.primary-action.is-ready {
+  animation: action-ready-glow 1.45s ease-in-out infinite;
+}
+
 .secondary-action {
   border: 1px solid var(--line-strong);
   background: #ffffff;
@@ -625,6 +643,38 @@ textarea:focus {
   transform: translateY(-1px) rotate(-45deg);
 }
 
+.ballot-category-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ballot-category-title strong {
+  min-width: 0;
+}
+
+.category-complete-check {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 8px 18px rgba(12, 73, 65, 0.2);
+}
+
+.category-complete-check::before {
+  width: 12px;
+  height: 7px;
+  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  content: "";
+  transform: translateY(-1px) rotate(-45deg);
+}
+
 .people-list,
 .finalist-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -726,11 +776,56 @@ textarea:focus {
   letter-spacing: 0;
 }
 
-.ballot-stepper {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.floating-category-nav {
+  pointer-events: none;
+}
+
+.floating-category-arrow {
+  position: fixed;
+  top: 50%;
+  z-index: 40;
+  display: inline-grid;
+  width: 52px;
+  height: 64px;
+  place-items: center;
+  border: 1px solid rgba(191, 201, 212, 0.8);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--accent-strong);
+  pointer-events: auto;
+  transform: translateY(-50%);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 26px rgba(30, 41, 59, 0.14);
+}
+
+.floating-category-arrow::before {
+  width: 15px;
+  height: 15px;
+  border-top: 3px solid currentColor;
+  border-right: 3px solid currentColor;
+  content: "";
+}
+
+.floating-category-arrow.is-left {
+  left: max(8px, calc(var(--page-gutter) * 0.45));
+}
+
+.floating-category-arrow.is-left::before {
+  transform: translateX(3px) rotate(-135deg);
+}
+
+.floating-category-arrow.is-right {
+  right: max(8px, calc(var(--page-gutter) * 0.45));
+}
+
+.floating-category-arrow.is-right::before {
+  transform: translateX(-3px) rotate(45deg);
+}
+
+.floating-category-arrow.is-guiding:not(:disabled) {
+  animation: action-ready-glow 1.45s ease-in-out infinite;
+  border-color: rgba(23, 107, 96, 0.42);
+  background: rgba(237, 248, 245, 0.94);
 }
 
 .notice,
@@ -1177,7 +1272,9 @@ textarea:focus {
 @media (prefers-reduced-motion: reduce) {
   .app-shell,
   .nav-links a,
-  .text-button {
+  .text-button,
+  .floating-category-arrow,
+  .primary-action.is-ready {
     animation: none;
     transition: none;
   }
@@ -1323,8 +1420,17 @@ textarea:focus {
     width: 100%;
   }
 
-  .ballot-stepper {
-    align-items: stretch;
+  .floating-category-arrow {
+    width: 44px;
+    height: 56px;
+  }
+
+  .floating-category-arrow.is-left {
+    left: 8px;
+  }
+
+  .floating-category-arrow.is-right {
+    right: 8px;
   }
 
   .modal-backdrop {
