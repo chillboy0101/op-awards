@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -69,29 +69,39 @@ function CategoryCompletionTick() {
   return <span aria-label="Category selected" className="category-complete-check" role="img" />;
 }
 
-function CategoryNavigationArrows({
+function CategoryHeader({
+  categoryCount,
+  categoryIndex,
+  completed,
   disabled,
+  headerRef,
   nextDisabled,
   nextGlows,
   onNext,
   onPrevious,
   previousDisabled,
   previousGlows,
+  title,
 }: {
+  categoryCount: number;
+  categoryIndex: number;
+  completed: boolean;
   disabled: boolean;
+  headerRef: RefObject<HTMLDivElement | null>;
   nextDisabled: boolean;
   nextGlows: boolean;
   onNext: () => void;
   onPrevious: () => void;
   previousDisabled: boolean;
   previousGlows: boolean;
+  title: string;
 }) {
   return (
-    <div aria-label="Category navigation" className="floating-category-nav">
+    <div className="ballot-category-head sticky-category-head" ref={headerRef} tabIndex={-1}>
       <button
         aria-label="Previous category"
         className={[
-          "floating-category-arrow",
+          "category-title-arrow",
           "is-left",
           previousGlows ? "is-guiding" : "",
         ]
@@ -101,10 +111,19 @@ function CategoryNavigationArrows({
         onClick={onPrevious}
         type="button"
       />
+      <div className="category-title-copy">
+        <span>
+          Category {categoryIndex + 1} of {categoryCount}
+        </span>
+        <div className="ballot-category-title">
+          <strong>{title}</strong>
+          {completed ? <CategoryCompletionTick /> : null}
+        </div>
+      </div>
       <button
         aria-label="Next category"
         className={[
-          "floating-category-arrow",
+          "category-title-arrow",
           "is-right",
           nextGlows ? "is-guiding" : "",
         ]
@@ -599,15 +618,20 @@ function NominationExperience({
       {!hasSubmittedNominations && currentCategory ? (
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
-            <div className="ballot-category-head sticky-category-head" ref={categoryHeaderRef} tabIndex={-1}>
-              <span>
-                Category {safeCategoryIndex + 1} of {activeCategories.length}
-              </span>
-              <div className="ballot-category-title">
-                <strong>{currentCategory.title}</strong>
-                {currentCategoryHasSelection ? <CategoryCompletionTick /> : null}
-              </div>
-            </div>
+            <CategoryHeader
+              categoryCount={activeCategories.length}
+              categoryIndex={safeCategoryIndex}
+              completed={currentCategoryHasSelection}
+              disabled={pending}
+              headerRef={categoryHeaderRef}
+              nextDisabled={safeCategoryIndex >= activeCategories.length - 1}
+              nextGlows={currentCategoryHasSelection && safeCategoryIndex < activeCategories.length - 1}
+              onNext={() => goToCategory(safeCategoryIndex + 1)}
+              onPrevious={() => goToCategory(safeCategoryIndex - 1)}
+              previousDisabled={safeCategoryIndex === 0}
+              previousGlows={hasIncompletePreviousCategory}
+              title={currentCategory.title}
+            />
             <MemberDirectory
               currentMemberId={currentUser.member.id}
               members={model.members}
@@ -615,15 +639,6 @@ function NominationExperience({
               setSelectedNominee={(memberId) => selectNominee(currentCategory.id, memberId)}
             />
           </section>
-          <CategoryNavigationArrows
-            disabled={pending}
-            nextDisabled={safeCategoryIndex >= activeCategories.length - 1}
-            nextGlows={currentCategoryHasSelection && safeCategoryIndex < activeCategories.length - 1}
-            onNext={() => goToCategory(safeCategoryIndex + 1)}
-            onPrevious={() => goToCategory(safeCategoryIndex - 1)}
-            previousDisabled={safeCategoryIndex === 0}
-            previousGlows={hasIncompletePreviousCategory}
-          />
           {allCategoriesSelected ? (
             <button
               className="primary-action is-ready"
@@ -843,15 +858,23 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
       {!submittedReceipt && currentCategory ? (
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
-            <div className="ballot-category-head sticky-category-head" ref={categoryHeaderRef} tabIndex={-1}>
-              <span>
-                Category {safeCategoryIndex + 1} of {categoriesWithFinalists.length}
-              </span>
-              <div className="ballot-category-title">
-                <strong>{currentCategory.title}</strong>
-                {currentCategoryHasSelection ? <CategoryCompletionTick /> : null}
-              </div>
-            </div>
+            <CategoryHeader
+              categoryCount={categoriesWithFinalists.length}
+              categoryIndex={safeCategoryIndex}
+              completed={currentCategoryHasSelection}
+              disabled={pending}
+              headerRef={categoryHeaderRef}
+              nextDisabled={safeCategoryIndex >= categoriesWithFinalists.length - 1}
+              nextGlows={
+                currentCategoryHasSelection &&
+                safeCategoryIndex < categoriesWithFinalists.length - 1
+              }
+              onNext={() => goToCategory(safeCategoryIndex + 1)}
+              onPrevious={() => goToCategory(safeCategoryIndex - 1)}
+              previousDisabled={safeCategoryIndex === 0}
+              previousGlows={hasIncompletePreviousCategory}
+              title={currentCategory.title}
+            />
             <div className="finalist-grid">
               {currentFinalists.map((finalist) => (
                 <FinalistCard
@@ -865,18 +888,6 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               ))}
             </div>
           </section>
-          <CategoryNavigationArrows
-            disabled={pending}
-            nextDisabled={safeCategoryIndex >= categoriesWithFinalists.length - 1}
-            nextGlows={
-              currentCategoryHasSelection &&
-              safeCategoryIndex < categoriesWithFinalists.length - 1
-            }
-            onNext={() => goToCategory(safeCategoryIndex + 1)}
-            onPrevious={() => goToCategory(safeCategoryIndex - 1)}
-            previousDisabled={safeCategoryIndex === 0}
-            previousGlows={hasIncompletePreviousCategory}
-          />
           <button
             className={["primary-action", allBallotCategoriesSelected ? "is-ready" : ""]
               .filter(Boolean)
