@@ -553,6 +553,7 @@ textarea:focus {
 
 .person-card,
 .finalist-card {
+  position: relative;
   width: 100%;
   color: var(--foreground);
   padding: 12px;
@@ -600,6 +601,30 @@ textarea:focus {
   box-shadow: inset 0 0 0 1px rgba(23, 107, 96, 0.16);
 }
 
+.selection-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 8px 18px rgba(12, 73, 65, 0.2);
+}
+
+.selection-check::before {
+  width: 12px;
+  height: 7px;
+  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  content: "";
+  transform: translateY(-1px) rotate(-45deg);
+}
+
 .people-list,
 .finalist-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -645,8 +670,8 @@ textarea:focus {
 
 .member-card-grid .self-badge {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  right: 14px;
+  bottom: 14px;
   margin-left: 0;
   background: #ffffff;
 }
@@ -706,13 +731,6 @@ textarea:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.selection-summary {
-  color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 720;
-  text-align: right;
 }
 
 .notice,
@@ -1307,10 +1325,6 @@ textarea:focus {
 
   .ballot-stepper {
     align-items: stretch;
-  }
-
-  .selection-summary {
-    text-align: left;
   }
 
   .modal-backdrop {

@@ -27,7 +27,6 @@ import {
   buildNominationDirectory,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
-  getSubmittedNominationCategoryIds,
   groupNominationsByNominator,
   hasSubmittedCompleteNominationBallot,
   toggleSelection,
@@ -389,28 +388,34 @@ function MemberDirectory({
         value={query}
       />
       <div className="people-list member-card-grid">
-        {filteredMembers.map((member) => (
-          <button
-            aria-label={member.name}
-            className={[
-              "person-card",
-              selectedNominee === member.id ? "is-selected" : "",
-              member.isSelf ? "is-self" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            disabled={!member.selectable}
-            key={member.id}
-            onClick={() => setSelectedNominee(toggleSelection(selectedNominee, member.id))}
-            type="button"
-          >
-            <PersonAvatar member={member} name={member.name} />
-            <span>
-              <strong>{member.name}</strong>
-            </span>
-            {member.isSelf ? <span className="self-badge">You</span> : null}
-          </button>
-        ))}
+        {filteredMembers.map((member) => {
+          const isSelected = selectedNominee === member.id;
+
+          return (
+            <button
+              aria-label={member.name}
+              aria-pressed={isSelected}
+              className={[
+                "person-card",
+                isSelected ? "is-selected" : "",
+                member.isSelf ? "is-self" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              disabled={!member.selectable}
+              key={member.id}
+              onClick={() => setSelectedNominee(toggleSelection(selectedNominee, member.id))}
+              type="button"
+            >
+              {isSelected ? <span aria-hidden="true" className="selection-check" /> : null}
+              <PersonAvatar member={member} name={member.name} />
+              <span>
+                <strong>{member.name}</strong>
+              </span>
+              {member.isSelf ? <span className="self-badge">You</span> : null}
+            </button>
+          );
+        })}
       </div>
       {filteredMembers.length === 0 ? <EmptyState message="No matching members." /> : null}
     </div>
@@ -450,15 +455,6 @@ function NominationExperience({
   const selectedDraft = currentCategory
     ? nominationDrafts[currentCategory.id] ?? { nomineeId: "", statement: "" }
     : { nomineeId: "", statement: "" };
-  const submittedCategoryIds = useMemo(
-    () =>
-      getSubmittedNominationCategoryIds({
-        categories: activeCategories,
-        memberId: currentUser.member.id,
-        nominations: model.nominations,
-      }),
-    [activeCategories, currentUser.member.id, model.nominations],
-  );
   const hasSubmittedNominations =
     submitted ||
     hasSubmittedCompleteNominationBallot({
@@ -466,16 +462,6 @@ function NominationExperience({
       memberId: currentUser.member.id,
       nominations: model.nominations,
     });
-  const completedCategoryIds = useMemo(
-    () =>
-      new Set([
-        ...submittedCategoryIds,
-        ...activeCategories
-          .filter((category) => Boolean(nominationDrafts[category.id]?.nomineeId))
-          .map((category) => category.id),
-      ]),
-    [activeCategories, nominationDrafts, submittedCategoryIds],
-  );
   const heading = activeCategories.length > 1 ? "Select category and pick a person" : "Pick a person";
   const allCategoriesSelected =
     activeCategories.length > 0 &&
@@ -564,9 +550,6 @@ function NominationExperience({
               setSelectedNominee={(memberId) => selectNominee(currentCategory.id, memberId)}
             />
           </section>
-          <div className="selection-summary" aria-live="polite">
-            {completedCategoryIds.size}/{activeCategories.length} selected
-          </div>
           <div className="ballot-stepper" aria-label="Nomination category navigation">
             <button
               className="secondary-action"
@@ -617,10 +600,12 @@ function FinalistCard({
 }) {
   return (
     <button
+      aria-pressed={selected}
       className={selected ? "finalist-card is-selected" : "finalist-card"}
       onClick={() => setSelected(finalist.id)}
       type="button"
     >
+      {selected ? <span aria-hidden="true" className="selection-check" /> : null}
       <PersonAvatar member={member ?? { name: finalist.displayName, photoUrl: finalist.photoUrl }} name={finalist.displayName} />
       <span>
         <strong>{finalist.displayName}</strong>
@@ -683,7 +668,6 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
         : [],
     [currentCategory, visibleFinalists],
   );
-  const completedCount = categoriesWithFinalists.filter((category) => selections[category.id]).length;
   const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
 
   const focusCategoryHeader = useCallback(() => {
@@ -801,9 +785,6 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
               ))}
             </div>
           </section>
-          <div className="selection-summary" aria-live="polite">
-            {completedCount}/{categoriesWithFinalists.length} categories selected
-          </div>
           <div className="ballot-stepper" aria-label="Ballot category navigation">
             <button
               className="secondary-action"
