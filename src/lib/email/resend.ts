@@ -38,24 +38,3 @@ export async function sendMagicLinkEmail({
     text: `Use this secure link to sign in to O&P Awards: ${magicLinkUrl}`,
   });
 }
-
-export async function sendVoteReceiptEmail({
-  email,
-  confirmationCode,
-}: {
-  email: string;
-  confirmationCode: string;
-}) {
-  const env = getServerEnv();
-
-  if (!env.RESEND_API_KEY) {
-    return { skipped: true, reason: "RESEND_API_KEY is not configured." };
-  }
-
-  return getResend().emails.send({
-    from: env.EMAIL_FROM,
-    to: email,
-    subject: "O&P Awards ballot receipt",
-    text: `Your O&P Awards ballot was received. Receipt: ${confirmationCode}. Your selections are stored anonymously.`,
-  });
-}

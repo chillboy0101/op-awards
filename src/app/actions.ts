@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { z } from "zod";
 
 import { getDb, hasDatabaseUrl, schema } from "@/db";
@@ -29,7 +28,6 @@ import {
   validateNomination,
   validateNominationBatch,
 } from "@/lib/awards/workflow.mjs";
-import { sendVoteReceiptEmail } from "@/lib/email/resend";
 
 const nominationEntrySchema = z.object({
   categoryId: z.string().min(1),
@@ -675,17 +673,6 @@ export async function submitBallotAction(input: unknown) {
 
     throw error;
   }
-
-  after(async () => {
-    try {
-      await sendVoteReceiptEmail({
-        confirmationCode,
-        email: user.member.email,
-      });
-    } catch {
-      // Voting is already recorded; a receipt email retry can happen outside the request.
-    }
-  });
 
   revalidateAwardPages();
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 import {
@@ -55,5 +56,17 @@ describe("magic link and session security", () => {
       () => assertRole("member", ["admin"]),
       /Requires one of: admin/,
     );
+  });
+});
+
+describe("awards email policy", () => {
+  it("does not send a ballot receipt email after voting", async () => {
+    const [actionsSource, resendSource] = await Promise.all([
+      readFile(new URL("../src/app/actions.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/lib/email/resend.ts", import.meta.url), "utf8"),
+    ]);
+
+    assert.equal(actionsSource.includes("sendVoteReceiptEmail"), false);
+    assert.equal(resendSource.includes("O&P Awards ballot receipt"), false);
   });
 });
