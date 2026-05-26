@@ -324,6 +324,30 @@ describe("nomination ballot", () => {
     );
   });
 
+  it("counts redacted nomination records without exposing nominee choices", () => {
+    const redactedNominations = [
+      { id: "nom-1", categoryId: "cat-service", nomineeId: "", nominatorId: "mem-1" },
+      { id: "nom-2", categoryId: "cat-leadership", nomineeId: "", nominatorId: "mem-1" },
+    ];
+
+    assert.deepEqual(
+      getSubmittedNominationCategoryIds({
+        categories,
+        memberId: "mem-1",
+        nominations: redactedNominations,
+      }),
+      ["cat-leadership", "cat-service"],
+    );
+    assert.deepEqual(
+      groupNominationsByNominator({
+        categories,
+        members,
+        nominations: redactedNominations,
+      })[0].nominations.map((nomination) => nomination.nomineeName),
+      ["Nominee", "Nominee"],
+    );
+  });
+
   it("does not count historical self-nominations as completed categories", () => {
     assert.deepEqual(
       getSubmittedNominationCategoryIds({

@@ -1238,6 +1238,12 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
   }
 
   function publishWinners() {
+    const confirmed = window.confirm(
+      "Final publish winners? This will make the certified winners visible on the public page.",
+    );
+
+    if (!confirmed) return;
+
     setMessage(null);
     startTransition(async () => {
       const result = (await publishWinnersAction(model.cycle.id)) as PortalResult;
@@ -1330,7 +1336,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
               onClick={publishWinners}
               type="button"
             >
-              {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Publish winners"}
+              {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Final publish winners"}
             </button>
           ) : null}
           <button className="danger-action" disabled={pending} onClick={resetAwardsRun} type="button">
@@ -1797,7 +1803,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
                     {group.nominations.map((nomination) => (
                       <div className="nomination-choice" key={nomination.id}>
                         <strong>{nomination.categoryTitle}</strong>
-                        <small>{nomination.nomineeName}</small>
+                        <small>Selection hidden</small>
                       </div>
                     ))}
                   </div>

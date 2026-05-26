@@ -82,6 +82,12 @@ export type AwardPortalModel = {
     }[];
   };
 };
+type NominationVisibility = "none" | "own" | "redacted" | "full";
+type PortalDataOptions = {
+  currentMemberId?: string;
+  includeClerkRoster?: boolean;
+  nominationVisibility?: NominationVisibility;
+};
 
 function toStage(stage: string): AwardStage {
   const labels: Record<string, AwardStage> = {
@@ -176,9 +182,7 @@ function getFallbackPortalData(): AwardPortalModel {
   };
 }
 
-export async function getPortalData(
-  options: { currentMemberId?: string; includeClerkRoster?: boolean } = {},
-): Promise<AwardPortalModel> {
+export async function getPortalData(options: PortalDataOptions = {}): Promise<AwardPortalModel> {
   if (!hasDatabaseUrl()) return getFallbackPortalData();
 
   if (options.includeClerkRoster) {
@@ -583,6 +587,30 @@ export async function getPortalData(
         };
       }),
   };
+  const nominationVisibility =
+    options.nominationVisibility ?? (options.currentMemberId ? "own" : "none");
+  const visibleNominations = nominations
+    .filter((nomination) => {
+      if (nominationVisibility === "none") return false;
+      if (nominationVisibility === "own") {
+        return nomination.nominatorId === options.currentMemberId;
+      }
+
+      return true;
+    })
+    .map(
+      (nomination): Nomination => ({
+        categoryId: nomination.categoryId,
+        duplicateRisk: nomination.duplicateRisk,
+        id: nomination.id,
+        link: nominationVisibility === "redacted" ? undefined : nomination.supportingLink ?? undefined,
+        nomineeId: nominationVisibility === "redacted" ? "" : nomination.nomineeId,
+        nominatorId: nomination.nominatorId,
+        reviewerScore: nominationVisibility === "redacted" ? 0 : nomination.reviewerScore ?? 0,
+        statement: nominationVisibility === "redacted" ? "" : nomination.statement,
+        status: nominationStatus(nomination.status),
+      }),
+    );
 
   return {
     audit: audit.map(
@@ -625,19 +653,7 @@ export async function getPortalData(
     finalists: finalistList,
     hasUnresolvedTies: unresolvedTieIds.size > 0,
     members: memberList,
-    nominations: nominations.map(
-      (nomination): Nomination => ({
-        categoryId: nomination.categoryId,
-        duplicateRisk: nomination.duplicateRisk,
-        id: nomination.id,
-        link: nomination.supportingLink ?? undefined,
-        nomineeId: nomination.nomineeId,
-        nominatorId: nomination.nominatorId,
-        reviewerScore: nomination.reviewerScore ?? 0,
-        statement: nomination.statement,
-        status: nominationStatus(nomination.status),
-      }),
-    ),
+    nominations: visibleNominations,
     phases: awardModel.phases,
     privateResults,
     progress,

@@ -18,7 +18,10 @@ export default async function AdminPage() {
 
   if (currentUser.role !== "admin") redirect("/member?access=admin");
 
-  const model = await getPortalData({ includeClerkRoster: true });
+  const model = await getPortalData({
+    includeClerkRoster: true,
+    nominationVisibility: "redacted",
+  });
 
   return <AdminAwardsPage currentUser={currentUser} model={model} />;
 }
