@@ -183,6 +183,33 @@ export function hasSubmittedCompleteNominationBallot(input) {
   return activeCategoryIds.every((categoryId) => submittedCategoryIds.includes(categoryId));
 }
 
+/**
+ * @param {{
+ *   category: { id: string; nomineeStaffScope?: string };
+ *   members?: Array<{ id: string; awardsEligible?: boolean; staffType?: string; status?: string }>;
+ *   nominations?: Array<{ categoryId: string; id?: string; nomineeId: string; nominatorId: string }>;
+ * }} input
+ * @returns {string[]}
+ */
+export function getInvalidNominationIdsForCategory({ category, members = [], nominations = [] }) {
+  const memberById = new Map(members.map((member) => [member.id, member]));
+
+  return nominations
+    .filter((nomination) => nomination.categoryId === category.id)
+    .filter((nomination) => {
+      const nominee = memberById.get(nomination.nomineeId);
+
+      return (
+        nomination.nomineeId === nomination.nominatorId ||
+        !activeMember(members, nomination.nomineeId) ||
+        !memberMatchesNomineeStaffScope(nominee, category.nomineeStaffScope)
+      );
+    })
+    .map((nomination) => nomination.id)
+    .filter(Boolean)
+    .sort();
+}
+
 export function groupNominationsByNominator(input) {
   const categories = input?.categories ?? [];
   const members = input?.members ?? [];

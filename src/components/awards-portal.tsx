@@ -86,13 +86,6 @@ const nomineeStaffScopeOptions: Array<{
   { label: "NSS", value: "nss" },
 ];
 
-function formatNomineeStaffScope(scope: Category["nomineeStaffScope"]) {
-  if (scope === "staff") return "Staff";
-  if (scope === "nss") return "NSS";
-
-  return "Both";
-}
-
 function isInteractiveSwipeTarget(target: EventTarget | null) {
   return (
     target instanceof Element &&
@@ -1369,6 +1362,18 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   const categoryNameInputRef = useRef<HTMLInputElement | null>(null);
   const modalScrollYRef = useRef(0);
   const router = useRouter();
+  const groupedCategories = useMemo(
+    () =>
+      nomineeStaffScopeOptions
+        .map((option) => ({
+          ...option,
+          categories: model.categories.filter(
+            (category) => category.nomineeStaffScope === option.value,
+          ),
+        }))
+        .filter((group) => group.categories.length > 0),
+    [model.categories],
+  );
   useAutoDismissMessage(message, setMessage);
 
   useEffect(() => {
@@ -1453,34 +1458,41 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
         </button>
       </div>
       <div className="compact-list category-list">
-        {model.categories.map((category) => (
-          <article className="compact-row category-edit-row" key={category.id}>
-            <span>
-              <strong>{category.title}</strong>
-              <small>
-                {formatNomineeStaffScope(category.nomineeStaffScope)} nominees -{" "}
-                {formatCategoryVotingSummary(category, model.progress.eligibleMemberCount)}
-              </small>
-            </span>
-            <div className="row-actions">
-              <button
-                className="secondary-action"
-                disabled={pending}
-                onClick={() => editCategory(category)}
-                type="button"
-              >
-                Edit
-              </button>
-              <button
-                className="danger-action"
-                disabled={pending}
-                onClick={() => deleteCategory(category)}
-                type="button"
-              >
-                Delete
-              </button>
+        {groupedCategories.map((group) => (
+          <div className="category-scope-group" key={group.value}>
+            <div className="queue-head compact-queue-head">
+              <h3>{group.label}</h3>
+              <small>{group.categories.length}</small>
             </div>
-          </article>
+            {group.categories.map((category) => (
+              <article className="compact-row category-edit-row" key={category.id}>
+                <span>
+                  <strong>{category.title}</strong>
+                  <small>
+                    {formatCategoryVotingSummary(category, model.progress.eligibleMemberCount)}
+                  </small>
+                </span>
+                <div className="row-actions">
+                  <button
+                    className="secondary-action"
+                    disabled={pending}
+                    onClick={() => editCategory(category)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="danger-action"
+                    disabled={pending}
+                    onClick={() => deleteCategory(category)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
         ))}
       </div>
       {message ? <div className="notice">{message}</div> : null}

@@ -21,6 +21,7 @@ import {
   createRunoffCategory,
   createResultCertificationSnapshot,
   getCompletedCategoryIds,
+  getInvalidNominationIdsForCategory,
   getResetCategoryIds,
   getUnresolvedTieCategoryIds,
   suggestFinalists,
@@ -758,6 +759,7 @@ export async function upsertCategoryAction(input: unknown) {
   const category = validated.category as ValidatedCategorySetup;
   const categoryId = parsed.data.categoryId?.trim();
   const db = getDb();
+  let invalidNominationIds: string[] = [];
 
   if (categoryId) {
     const [existingCategory] = await db
@@ -768,12 +770,7 @@ export async function upsertCategoryAction(input: unknown) {
 
     if (!existingCategory) return { ok: false, error: "Category not found." };
     if (existingCategory.nomineeStaffScope !== category.nomineeStaffScope) {
-      const [existingNomination, existingFinalist, existingVote] = await Promise.all([
-        db
-          .select({ id: schema.nominations.id })
-          .from(schema.nominations)
-          .where(eq(schema.nominations.categoryId, categoryId))
-          .limit(1),
+      const [existingFinalist, existingVote] = await Promise.all([
         db
           .select({ id: schema.finalists.id })
           .from(schema.finalists)
@@ -786,12 +783,25 @@ export async function upsertCategoryAction(input: unknown) {
           .limit(1),
       ]);
 
-      if (existingNomination.length || existingFinalist.length || existingVote.length) {
+      if (existingFinalist.length || existingVote.length) {
         return {
           ok: false,
-          error: "Reset this category before changing its staff scope.",
+          error: "Reset finalists and votes before changing this category group.",
         };
       }
+
+      const [members, categoryNominations] = await Promise.all([
+        db.select().from(schema.members),
+        db.select().from(schema.nominations).where(eq(schema.nominations.categoryId, categoryId)),
+      ]);
+      invalidNominationIds = getInvalidNominationIdsForCategory({
+        category: {
+          ...existingCategory,
+          nomineeStaffScope: category.nomineeStaffScope,
+        },
+        members,
+        nominations: categoryNominations,
+      });
     }
 
     await db
@@ -807,6 +817,12 @@ export async function upsertCategoryAction(input: unknown) {
         updatedAt: new Date(),
       })
       .where(and(eq(schema.categories.id, categoryId), eq(schema.categories.cycleId, cycle.id)));
+
+    if (invalidNominationIds.length > 0) {
+      await db
+        .delete(schema.nominations)
+        .where(inArray(schema.nominations.id, invalidNominationIds));
+    }
   } else {
     await db.insert(schema.categories).values({
       active: category.active,
@@ -824,6 +840,11 @@ export async function upsertCategoryAction(input: unknown) {
     action: categoryId ? "update_category" : "create_category",
     actorMemberId: user.member.id,
     actorRole: user.role,
+    metadata: invalidNominationIds.length
+      ? {
+          removedInvalidNominationCount: invalidNominationIds.length,
+        }
+      : undefined,
     target: category.title,
     summary: `Admin ${categoryId ? "updated" : "created"} award category.`,
   });

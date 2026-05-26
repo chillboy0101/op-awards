@@ -15,6 +15,7 @@ import {
   getCompletedCategoryIds,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
+  getInvalidNominationIdsForCategory,
   getNominationSupportThreshold,
   getResetCategoryIds,
   getSubmittedNominationCategoryIds,
@@ -344,6 +345,22 @@ describe("nomination ballot", () => {
         ],
       }),
       false,
+    );
+  });
+
+  it("finds nominations invalidated by a category staff scope change", () => {
+    assert.deepEqual(
+      getInvalidNominationIdsForCategory({
+        category: { ...categories[0], nomineeStaffScope: "staff" },
+        members,
+        nominations: [
+          { id: "nom-self", categoryId: "cat-leadership", nomineeId: "mem-1", nominatorId: "mem-1" },
+          { id: "nom-nss", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-2" },
+          { id: "nom-staff", categoryId: "cat-leadership", nomineeId: "mem-2", nominatorId: "mem-4" },
+          { id: "nom-other", categoryId: "cat-service", nomineeId: "mem-4", nominatorId: "mem-2" },
+        ],
+      }),
+      ["nom-nss", "nom-self"],
     );
   });
 });

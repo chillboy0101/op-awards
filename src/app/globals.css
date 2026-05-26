@@ -1115,6 +1115,12 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.category-scope-group {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
 .category-list .category-edit-row {
   align-items: center;
 }
