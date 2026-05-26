@@ -13,7 +13,11 @@ import {
 } from "@/lib/awards/data";
 import { getEffectiveCycleStage } from "@/lib/awards/phase";
 import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
-import { getUnresolvedTieCategoryIds } from "@/lib/awards/workflow.mjs";
+import {
+  buildVisibleBallotFinalists,
+  getCompletedCategoryIds,
+  getUnresolvedTieCategoryIds,
+} from "@/lib/awards/workflow.mjs";
 
 export type AwardPortalModel = {
   audit: AuditEvent[];
@@ -21,6 +25,7 @@ export type AwardPortalModel = {
   currentBallotScope: string;
   currentMemberVoteReceipt: {
     ballotScope: string;
+    categoryIds: string[];
     confirmationCode: string;
     submittedAt: string | null;
   } | null;
@@ -210,6 +215,7 @@ export async function getPortalData(
       name: member.name,
       awardsEligible: member.awardsEligible,
       photoUrl: member.photoUrl,
+      staffType: member.staffType as Member["staffType"],
       status: member.status,
     }),
   );
@@ -223,6 +229,7 @@ export async function getPortalData(
       finalistLimit: category.finalistLimit,
       id: category.id,
       kind: category.kind,
+      nomineeStaffScope: category.nomineeStaffScope as Category["nomineeStaffScope"],
       nominationLimit: category.nominationLimit,
       parentCategoryId: category.parentCategoryId,
       question: category.nominationQuestion,
@@ -513,17 +520,48 @@ export async function getPortalData(
   const eligibleVotingMembers = memberList
     .filter((member) => member.status === "active" && member.awardsEligible !== false)
     .sort((left, right) => left.name.localeCompare(right.name));
+  const visibleVotingCategoryIdsForMember = (member: Member) => {
+    const visibleFinalists = buildVisibleBallotFinalists({
+      categories: categoryList,
+      currentMemberId: member.id,
+      finalists: finalistList,
+      members: memberList,
+    });
+
+    return categoryList
+      .filter(
+        (category) =>
+          category.active &&
+          category.ballotScope === currentBallotScope &&
+          visibleFinalists.some(
+            (finalist) =>
+              finalist.categoryId === category.id && finalist.status === "approved",
+          ),
+      )
+      .map((category) => category.id);
+  };
+  const memberHasCompletedVoting = (member: Member) => {
+    const requiredCategoryIds = visibleVotingCategoryIdsForMember(member);
+    if (requiredCategoryIds.length === 0) return true;
+
+    const receipt = voteReceiptByMemberId.get(member.id);
+    if (!receipt) return false;
+
+    const completedCategoryIds = getCompletedCategoryIds(receipt);
+
+    return requiredCategoryIds.every((categoryId) => completedCategoryIds.includes(categoryId));
+  };
   const voteSubmissions = {
     ballotScope: currentBallotScope,
     pending: eligibleVotingMembers
-      .filter((member) => !voteReceiptByMemberId.has(member.id))
+      .filter((member) => !memberHasCompletedVoting(member))
       .map((member) => ({
         memberId: member.id,
         name: member.name,
         photoUrl: member.photoUrl,
       })),
     submitted: eligibleVotingMembers
-      .filter((member) => voteReceiptByMemberId.has(member.id))
+      .filter((member) => memberHasCompletedVoting(member))
       .map((member) => {
         const receipt = voteReceiptByMemberId.get(member.id);
 
@@ -551,6 +589,7 @@ export async function getPortalData(
     currentMemberVoteReceipt: currentMemberVoteReceipt
       ? {
           ballotScope: currentMemberVoteReceipt.ballotScope ?? "main",
+          categoryIds: getCompletedCategoryIds(currentMemberVoteReceipt),
           confirmationCode: currentMemberVoteReceipt.confirmationCode,
           submittedAt: dateToIso(currentMemberVoteReceipt.submittedAt),
         }

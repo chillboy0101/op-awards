@@ -6,11 +6,13 @@ import {
   buildAwardCategorySetup,
   buildDraftFinalists,
   buildNominationDirectory,
+  buildVisibleBallotFinalists,
   calculateResults,
   createAcceptedTieCertificationSnapshot,
   createResultCertificationSnapshot,
   createRunoffCategory,
   createVoteReceipt,
+  getCompletedCategoryIds,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
   getNominationSupportThreshold,
@@ -29,15 +31,16 @@ import {
 } from "../src/lib/awards/workflow.mjs";
 
 const members = [
-  { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", status: "active" },
-  { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", status: "active" },
-  { id: "mem-3", name: "Casey Rivera", email: "casey@cpa.test", status: "inactive" },
-  { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", status: "active" },
+  { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", staffType: "main", status: "active" },
+  { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", staffType: "monitoring_only", status: "active" },
+  { id: "mem-3", name: "Casey Rivera", email: "casey@cpa.test", staffType: "nss", status: "inactive" },
+  { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", staffType: "nss", status: "active" },
 ];
 
 const category = {
   id: "cat-leadership",
   title: "Leadership Excellence",
+  nomineeStaffScope: "all",
   nominationLimit: 1,
   finalistLimit: 3,
 };
@@ -99,9 +102,9 @@ describe("nomination validation", () => {
 
   it("rejects excluded nominators and nominees", () => {
     const roster = [
-      { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, status: "active" },
-      { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, status: "active" },
-      { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, status: "active" },
+      { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, staffType: "main", status: "active" },
+      { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, staffType: "monitoring_only", status: "active" },
+      { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, staffType: "nss", status: "active" },
     ];
 
     assert.equal(
@@ -126,6 +129,41 @@ describe("nomination validation", () => {
       "NOMINEE_NOT_ACTIVE_MEMBER",
     );
   });
+
+  it("rejects nominees outside the category staff scope", () => {
+    assert.equal(
+      validateNomination({
+        members,
+        category: { ...category, nomineeStaffScope: "staff" },
+        existingNominations: [],
+        nominatorId: "mem-1",
+        nomineeId: "mem-4",
+      }).reason,
+      "NOMINEE_OUT_OF_SCOPE",
+    );
+
+    assert.deepEqual(
+      validateNomination({
+        members,
+        category: { ...category, nomineeStaffScope: "staff" },
+        existingNominations: [],
+        nominatorId: "mem-4",
+        nomineeId: "mem-2",
+      }),
+      { ok: true },
+    );
+
+    assert.deepEqual(
+      validateNomination({
+        members,
+        category: { ...category, nomineeStaffScope: "nss" },
+        existingNominations: [],
+        nominatorId: "mem-2",
+        nomineeId: "mem-4",
+      }),
+      { ok: true },
+    );
+  });
 });
 
 describe("nomination directory", () => {
@@ -138,6 +176,7 @@ describe("nomination directory", () => {
   it("hides the signed-in member from nomination candidates", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",
+      category,
       members,
       query: "",
     });
@@ -145,9 +184,32 @@ describe("nomination directory", () => {
     assert.deepEqual(directory.map((member) => member.id), ["mem-2", "mem-4"]);
   });
 
+  it("filters nomination candidates by category staff scope", () => {
+    assert.deepEqual(
+      buildNominationDirectory({
+        currentMemberId: "mem-1",
+        category: { ...category, nomineeStaffScope: "staff" },
+        members,
+        query: "",
+      }).map((member) => member.id),
+      ["mem-2"],
+    );
+
+    assert.deepEqual(
+      buildNominationDirectory({
+        currentMemberId: "mem-1",
+        category: { ...category, nomineeStaffScope: "nss" },
+        members,
+        query: "",
+      }).map((member) => member.id),
+      ["mem-4"],
+    );
+  });
+
   it("filters excluded members out of nomination search results", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",
+      category,
       members: [
         ...members,
         {
@@ -395,9 +457,9 @@ describe("finalist workflow", () => {
   it("does not count excluded nominators or excluded nominees", () => {
     const suggestions = suggestFinalists({
       members: [
-        { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, status: "active" },
-        { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, status: "active" },
-        { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, status: "active" },
+        { id: "mem-1", name: "Ari Morgan", email: "ari@cpa.test", awardsEligible: true, staffType: "main", status: "active" },
+        { id: "mem-2", name: "Blair Chen", email: "blair@cpa.test", awardsEligible: false, staffType: "monitoring_only", status: "active" },
+        { id: "mem-4", name: "Devon Patel", email: "devon@cpa.test", awardsEligible: true, staffType: "nss", status: "active" },
       ],
       category,
       nominations: [
@@ -410,6 +472,25 @@ describe("finalist workflow", () => {
     assert.deepEqual(
       suggestions.map((suggestion) => suggestion.nomineeId),
       ["mem-4"],
+    );
+  });
+
+  it("does not suggest finalists outside the category staff scope", () => {
+    const suggestions = suggestFinalists({
+      members,
+      category: { ...category, nomineeStaffScope: "staff" },
+      nominations: [
+        { id: "nom-1", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-1" },
+        { id: "nom-2", categoryId: category.id, nomineeId: "mem-2", nominatorId: "mem-4" },
+        { id: "nom-3", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-1" },
+        { id: "nom-4", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-2" },
+        { id: "nom-5", categoryId: category.id, nomineeId: "mem-4", nominatorId: "mem-4" },
+      ],
+    });
+
+    assert.deepEqual(
+      suggestions.map((suggestion) => suggestion.nomineeId),
+      ["mem-2"],
     );
   });
 });
@@ -504,12 +585,14 @@ describe("category setup", () => {
       buildAwardCategorySetup({
         active: true,
         finalistLimit: 5,
+        nomineeStaffScope: "nss",
         title: "  Team Culture ",
       }),
       {
         active: true,
         description: "Team Culture award category.",
         finalistLimit: 5,
+        nomineeStaffScope: "nss",
         nominationLimit: 1,
         nominationQuestion: "Who should receive Team Culture?",
         title: "Team Culture",
@@ -524,6 +607,7 @@ describe("category setup", () => {
         description: "  Recognizes practical service to the O&P community. ",
         finalistLimit: 4,
         nominationLimit: 2,
+        nomineeStaffScope: "staff",
         nominationQuestion: " Who deserves this award? ",
         title: "  Community Impact ",
       }),
@@ -533,6 +617,7 @@ describe("category setup", () => {
           active: true,
           description: "Recognizes practical service to the O&P community.",
           finalistLimit: 4,
+          nomineeStaffScope: "staff",
           nominationLimit: 2,
           nominationQuestion: "Who deserves this award?",
           title: "Community Impact",
@@ -545,6 +630,7 @@ describe("category setup", () => {
         description: "Too short",
         finalistLimit: 0,
         nominationLimit: 0,
+        nomineeStaffScope: "contractor",
         nominationQuestion: "",
         title: "",
       }).reason,
@@ -646,10 +732,9 @@ describe("anonymous voting", () => {
   });
 
   it("hides the signed-in member from ballot finalists", async () => {
-    const { buildVisibleBallotFinalists } = await import("../src/lib/awards/workflow.mjs");
-
     const communityCategory = { id: "cat-community", active: true, title: "Community" };
     const visibleFinalists = buildVisibleBallotFinalists({
+      categories: [communityCategory],
       currentMemberId: "mem-1",
       finalists: [
         { id: "fin-self", categoryId: communityCategory.id, nomineeId: "mem-1", status: "approved" },
@@ -660,6 +745,78 @@ describe("anonymous voting", () => {
     });
 
     assert.deepEqual(visibleFinalists.map((finalist) => finalist.id), ["fin-peer"]);
+  });
+
+  it("hides finalists outside the category staff scope", () => {
+    const staffCategory = {
+      id: "cat-staff",
+      active: true,
+      nomineeStaffScope: "staff",
+      title: "Staff",
+    };
+    const nssCategory = {
+      id: "cat-nss",
+      active: true,
+      nomineeStaffScope: "nss",
+      title: "NSS",
+    };
+
+    assert.deepEqual(
+      buildVisibleBallotFinalists({
+        categories: [staffCategory, nssCategory],
+        currentMemberId: "mem-1",
+        finalists: [
+          { id: "fin-staff", categoryId: staffCategory.id, nomineeId: "mem-2", status: "approved" },
+          { id: "fin-wrong", categoryId: staffCategory.id, nomineeId: "mem-4", status: "approved" },
+          { id: "fin-nss", categoryId: nssCategory.id, nomineeId: "mem-4", status: "approved" },
+        ],
+        members,
+      }).map((finalist) => finalist.id),
+      ["fin-staff", "fin-nss"],
+    );
+  });
+
+  it("rejects ballot selections for completed categories and accepts only missing categories", () => {
+    const categories = [
+      { id: "cat-complete", active: true, title: "Complete" },
+      { id: "cat-missing", active: true, title: "Missing" },
+    ];
+    const finalists = [
+      { id: "fin-complete", categoryId: "cat-complete", nomineeId: "mem-2", status: "approved" },
+      { id: "fin-missing", categoryId: "cat-missing", nomineeId: "mem-4", status: "approved" },
+    ];
+
+    assert.deepEqual(
+      getCompletedCategoryIds({ categoryIds: ["cat-complete"] }),
+      ["cat-complete"],
+    );
+    assert.deepEqual(
+      validateBallotSelections({
+        categories,
+        completedCategoryIds: ["cat-complete"],
+        currentMemberId: "mem-1",
+        finalists,
+        members,
+        selections: {
+          "cat-complete": "fin-complete",
+          "cat-missing": "fin-missing",
+        },
+      }),
+      { ok: false, reason: "CATEGORY_ALREADY_SUBMITTED" },
+    );
+    assert.deepEqual(
+      validateBallotSelections({
+        categories,
+        completedCategoryIds: ["cat-complete"],
+        currentMemberId: "mem-1",
+        finalists,
+        members,
+        selections: {
+          "cat-missing": "fin-missing",
+        },
+      }),
+      { ok: true, categoryIds: ["cat-missing"] },
+    );
   });
 
   it("rejects a finalist selection for an excluded nominee", () => {

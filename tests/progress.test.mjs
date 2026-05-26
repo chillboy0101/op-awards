@@ -58,6 +58,29 @@ describe("cycle completion progress", () => {
     assert.equal(progress.votingRequiredCount, 2);
   });
 
+  it("counts a voter complete only when their receipt covers every required visible category", () => {
+    const progress = getCycleProgress({
+      ballotScope: "main",
+      categories: [
+        { id: "cat-1", active: true, ballotScope: "main" },
+        { id: "cat-2", active: true, ballotScope: "main" },
+      ],
+      finalists: [
+        { id: "fin-1", categoryId: "cat-1", nomineeId: "mem-2", status: "approved" },
+        { id: "fin-2", categoryId: "cat-2", nomineeId: "mem-1", status: "approved" },
+        { id: "fin-3", categoryId: "cat-2", nomineeId: "mem-3", status: "approved" },
+      ],
+      members,
+      voteReceipts: [
+        { memberId: "mem-1", ballotScope: "main", categoryIds: ["cat-1"] },
+        { memberId: "mem-2", ballotScope: "main", categoryIds: ["cat-1", "cat-2"] },
+      ],
+    });
+
+    assert.equal(progress.voteReceiptCount, 1);
+    assert.equal(progress.votingRequiredCount, 2);
+  });
+
   it("counts only categories and receipts in the requested ballot scope", () => {
     const progress = getCycleProgress({
       ballotScope: "runoff-cat-1",

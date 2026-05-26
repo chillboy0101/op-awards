@@ -13,6 +13,7 @@ export type Member = {
   chapter: string;
   status: "active" | "inactive";
   awardsEligible: boolean;
+  staffType: "main" | "monitoring_only" | "nss";
   joined: string;
   photoUrl?: string | null;
 };
@@ -26,6 +27,7 @@ export type Category = {
   title: string;
   description: string;
   finalistLimit: number;
+  nomineeStaffScope: "all" | "staff" | "nss";
   nominationLimit: number;
   question: string;
 };
@@ -95,6 +97,7 @@ export const awardModel = {
       chapter: "North",
       status: "active",
       awardsEligible: true,
+      staffType: "main",
       joined: "2019",
     },
     {
@@ -104,6 +107,7 @@ export const awardModel = {
       chapter: "Central",
       status: "active",
       awardsEligible: true,
+      staffType: "monitoring_only",
       joined: "2017",
     },
     {
@@ -113,6 +117,7 @@ export const awardModel = {
       chapter: "West",
       status: "active",
       awardsEligible: true,
+      staffType: "nss",
       joined: "2021",
     },
     {
@@ -122,6 +127,7 @@ export const awardModel = {
       chapter: "South",
       status: "active",
       awardsEligible: true,
+      staffType: "nss",
       joined: "2016",
     },
     {
@@ -131,6 +137,7 @@ export const awardModel = {
       chapter: "East",
       status: "inactive",
       awardsEligible: false,
+      staffType: "main",
       joined: "2020",
     },
   ] satisfies Member[],
@@ -143,6 +150,7 @@ export const awardModel = {
       title: "Leadership Excellence",
       description: "Recognizes a member whose leadership improved the O&P community.",
       finalistLimit: 3,
+      nomineeStaffScope: "all",
       nominationLimit: 1,
       question: "What leadership action created measurable value for members?",
     },
@@ -154,6 +162,7 @@ export const awardModel = {
       title: "Member Service",
       description: "Honors a member who gave exceptional service to peers.",
       finalistLimit: 3,
+      nomineeStaffScope: "all",
       nominationLimit: 1,
       question: "How did this member serve others beyond their regular role?",
     },
@@ -165,6 +174,7 @@ export const awardModel = {
       title: "Practice Innovation",
       description: "Celebrates a member who modernized practice, process, or education.",
       finalistLimit: 3,
+      nomineeStaffScope: "all",
       nominationLimit: 1,
       question: "Which new idea or process should the association recognize?",
     },

@@ -2,6 +2,27 @@ function findMember(members, memberId) {
   return members.find((member) => member.id === memberId) ?? null;
 }
 
+const STAFF_TYPES = new Set(["main", "monitoring_only", "nss"]);
+const NOMINEE_STAFF_SCOPES = new Set(["all", "staff", "nss"]);
+
+export function normalizeStaffType(value) {
+  return STAFF_TYPES.has(value) ? value : "main";
+}
+
+export function normalizeNomineeStaffScope(value) {
+  return NOMINEE_STAFF_SCOPES.has(value) ? value : "all";
+}
+
+export function memberMatchesNomineeStaffScope(member, scope = "all") {
+  const normalizedScope = normalizeNomineeStaffScope(scope);
+  const staffType = normalizeStaffType(member?.staffType);
+
+  if (normalizedScope === "all") return true;
+  if (normalizedScope === "staff") return staffType === "main" || staffType === "monitoring_only";
+
+  return staffType === "nss";
+}
+
 function activeMember(members, memberId) {
   const member = findMember(members, memberId);
   return member && member.status === "active" && member.awardsEligible !== false
@@ -25,13 +46,15 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
-export function buildNominationDirectory({ currentMemberId, members, query = "" }) {
+export function buildNominationDirectory({ category, currentMemberId, members, query = "" }) {
   const normalizedQuery = query.trim().toLowerCase();
+  const nomineeStaffScope = category?.nomineeStaffScope ?? "all";
 
   return members
     .filter((member) => member.status === "active")
     .filter((member) => member.awardsEligible !== false)
     .filter((member) => member.id !== currentMemberId)
+    .filter((member) => memberMatchesNomineeStaffScope(member, nomineeStaffScope))
     .filter((member) => {
       if (!normalizedQuery) return true;
 
@@ -66,6 +89,7 @@ export function buildAwardCategorySetup(input) {
     active: input.active !== false,
     description: `${awardTitle} award category.`,
     finalistLimit: positiveInteger(input.finalistLimit, 3),
+    nomineeStaffScope: normalizeNomineeStaffScope(input.nomineeStaffScope),
     nominationLimit: 1,
     nominationQuestion: `Who should receive ${awardTitle}?`,
     title,
@@ -206,10 +230,12 @@ export function groupNominationsByNominator(input) {
 }
 
 export function validateCategorySetup(input) {
+  const nomineeStaffScope = input.nomineeStaffScope ?? "all";
   const category = {
     active: input.active !== false,
     description: compactText(input.description),
     finalistLimit: positiveInteger(input.finalistLimit, 0),
+    nomineeStaffScope: normalizeNomineeStaffScope(nomineeStaffScope),
     nominationLimit: positiveInteger(input.nominationLimit, 0),
     nominationQuestion: compactText(input.nominationQuestion),
     title: compactText(input.title),
@@ -220,7 +246,8 @@ export function validateCategorySetup(input) {
     category.description.length < 12 ||
     category.nominationQuestion.length < 8 ||
     category.nominationLimit < 1 ||
-    category.finalistLimit < 1
+    category.finalistLimit < 1 ||
+    !NOMINEE_STAFF_SCOPES.has(nomineeStaffScope)
   ) {
     return { ok: false, reason: "INVALID_CATEGORY_SETUP" };
   }
@@ -245,6 +272,10 @@ export function validateNomination({
 
   if (nominatorId === nomineeId) {
     return { ok: false, reason: "SELF_NOMINATION_NOT_ALLOWED" };
+  }
+
+  if (!memberMatchesNomineeStaffScope(findMember(members, nomineeId), category.nomineeStaffScope)) {
+    return { ok: false, reason: "NOMINEE_OUT_OF_SCOPE" };
   }
 
   const nominationLimit = category.nominationLimit ?? 1;
@@ -321,11 +352,16 @@ export function suggestFinalists({ members, category, nominations }) {
     (member) => member.status === "active" && member.awardsEligible !== false,
   );
   const eligibleMemberIds = new Set(eligibleMembers.map((member) => member.id));
+  const eligibleNomineeIds = new Set(
+    eligibleMembers
+      .filter((member) => memberMatchesNomineeStaffScope(member, category.nomineeStaffScope))
+      .map((member) => member.id),
+  );
 
   for (const nomination of nominations) {
     if (nomination.categoryId !== category.id) continue;
     if (!eligibleMemberIds.has(nomination.nominatorId)) continue;
-    if (!eligibleMemberIds.has(nomination.nomineeId)) continue;
+    if (!eligibleNomineeIds.has(nomination.nomineeId)) continue;
 
     counts.set(nomination.nomineeId, (counts.get(nomination.nomineeId) ?? 0) + 1);
   }
@@ -339,7 +375,10 @@ export function suggestFinalists({ members, category, nominations }) {
         nomineeId,
         displayName: member?.name ?? "Unknown member",
         nominationCount,
-        eligible: member?.status === "active" && member.awardsEligible !== false,
+        eligible:
+          member?.status === "active" &&
+          member.awardsEligible !== false &&
+          memberMatchesNomineeStaffScope(member, category.nomineeStaffScope),
       };
     })
     .filter((suggestion) => suggestion.eligible)
@@ -412,13 +451,27 @@ export function createVoteReceipt({
 }
 
 /**
+ * @param {{ categoryIds?: string[] } | null | undefined} receipt
+ * @returns {string[]}
+ */
+export function getCompletedCategoryIds(receipt) {
+  return Array.isArray(receipt?.categoryIds) ? [...new Set(receipt.categoryIds)].sort() : [];
+}
+
+/**
  * @param {{
+ *   categories?: Array<{ id: string; nomineeStaffScope?: string }>;
  *   currentMemberId?: string;
- *   finalists?: Array<{ id: string; nomineeId?: string; status?: string }>;
- *   members?: Array<{ id: string; awardsEligible?: boolean; status?: string }>;
+ *   finalists?: Array<{ categoryId: string; id: string; nomineeId?: string; status?: string }>;
+ *   members?: Array<{ id: string; awardsEligible?: boolean; staffType?: string; status?: string }>;
  * }} input
  */
-export function buildVisibleBallotFinalists({ currentMemberId, finalists = [], members }) {
+export function buildVisibleBallotFinalists({
+  categories = [],
+  currentMemberId,
+  finalists = [],
+  members,
+}) {
   const eligibleMemberIds =
     members?.length > 0
       ? new Set(
@@ -430,25 +483,50 @@ export function buildVisibleBallotFinalists({ currentMemberId, finalists = [], m
             .map((member) => member.id),
         )
       : null;
+  const memberById = new Map((members ?? []).map((member) => [member.id, member]));
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
 
   return finalists
     .filter((finalist) => finalist.status === "approved")
     .filter((finalist) => !currentMemberId || finalist.nomineeId !== currentMemberId)
-    .filter((finalist) => !eligibleMemberIds || eligibleMemberIds.has(finalist.nomineeId));
+    .filter((finalist) => !eligibleMemberIds || eligibleMemberIds.has(finalist.nomineeId))
+    .filter((finalist) => {
+      const category = categoryById.get(finalist.categoryId);
+      if (!category) return true;
+
+      return memberMatchesNomineeStaffScope(
+        memberById.get(finalist.nomineeId),
+        category.nomineeStaffScope,
+      );
+    });
 }
 
+/**
+ * @param {{
+ *   categories: Array<{ id: string; active?: boolean; nomineeStaffScope?: string }>;
+ *   completedCategoryIds?: string[];
+ *   currentMemberId?: string;
+ *   finalists: Array<{ categoryId: string; id: string; nomineeId?: string; status?: string }>;
+ *   members?: Array<{ id: string; awardsEligible?: boolean; staffType?: string; status?: string }>;
+ *   selections: Record<string, string>;
+ * }} input
+ * @returns {{ ok: true; categoryIds: string[] } | { ok: false; reason: string }}
+ */
 export function validateBallotSelections({
   categories,
+  completedCategoryIds = [],
   currentMemberId,
   finalists,
   members,
   selections,
 }) {
+  const completedCategoryIdSet = new Set(completedCategoryIds);
   const approvedFinalists = finalists.filter((finalist) => finalist.status === "approved");
   const approvedFinalistById = new Map(
     approvedFinalists.map((finalist) => [finalist.id, finalist]),
   );
   const visibleApprovedFinalists = buildVisibleBallotFinalists({
+    categories,
     currentMemberId,
     finalists,
     members,
@@ -468,17 +546,23 @@ export function validateBallotSelections({
   const ballotCategories = categories.filter(
     (category) =>
       category.active !== false &&
+      !completedCategoryIdSet.has(category.id) &&
       visibleApprovedFinalists.some(
         (finalist) =>
           finalist.categoryId === category.id,
       ),
   );
   const categoryIds = ballotCategories.map((category) => category.id);
+  const selectedCategoryIds = Object.keys(selections);
+
+  if (selectedCategoryIds.some((categoryId) => completedCategoryIdSet.has(categoryId))) {
+    return { ok: false, reason: "CATEGORY_ALREADY_SUBMITTED" };
+  }
 
   if (
     categoryIds.length === 0 ||
     categoryIds.some((categoryId) => !selections[categoryId]) ||
-    Object.keys(selections).some((categoryId) => !categoryIds.includes(categoryId))
+    selectedCategoryIds.some((categoryId) => !categoryIds.includes(categoryId))
   ) {
     return { ok: false, reason: "INCOMPLETE_BALLOT" };
   }

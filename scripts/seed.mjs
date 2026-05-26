@@ -34,6 +34,7 @@ await sql`
     nomination_question,
     nomination_limit,
     finalist_limit,
+    nominee_staff_scope,
     active
   )
   values
@@ -45,6 +46,7 @@ await sql`
       'What leadership action created measurable value for members?',
       1,
       3,
+      'all',
       true
     ),
     (
@@ -55,6 +57,7 @@ await sql`
       'How did this member serve others beyond their regular role?',
       1,
       3,
+      'all',
       true
     ),
     (
@@ -65,6 +68,7 @@ await sql`
       'Which new idea or process should the association recognize?',
       1,
       3,
+      'all',
       true
     )
   on conflict (id) do update set
@@ -73,6 +77,7 @@ await sql`
     nomination_question = excluded.nomination_question,
     nomination_limit = excluded.nomination_limit,
     finalist_limit = excluded.finalist_limit,
+    nominee_staff_scope = excluded.nominee_staff_scope,
     active = true,
     updated_at = now()
 `;

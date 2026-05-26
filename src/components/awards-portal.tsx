@@ -70,6 +70,27 @@ type SwipeStart = {
   x: number;
   y: number;
 };
+type CategoryFormState = {
+  categoryId: string;
+  nomineeStaffScope: Category["nomineeStaffScope"];
+  title: string;
+};
+
+const nomineeStaffScopeOptions: Array<{
+  label: string;
+  value: Category["nomineeStaffScope"];
+}> = [
+  { label: "Both", value: "all" },
+  { label: "Staff", value: "staff" },
+  { label: "NSS", value: "nss" },
+];
+
+function formatNomineeStaffScope(scope: Category["nomineeStaffScope"]) {
+  if (scope === "staff") return "Staff";
+  if (scope === "nss") return "NSS";
+
+  return "Both";
+}
 
 function isInteractiveSwipeTarget(target: EventTarget | null) {
   return (
@@ -532,11 +553,13 @@ export function PublicAwardsPage({ model }: { model: AwardPortalModel }) {
 }
 
 function MemberDirectory({
+  category,
   currentMemberId,
   members,
   selectedNominee,
   setSelectedNominee,
 }: {
+  category: Category;
   currentMemberId: string;
   members: Member[];
   selectedNominee: string;
@@ -546,11 +569,12 @@ function MemberDirectory({
   const filteredMembers = useMemo(
     () =>
       buildNominationDirectory({
+        category,
         currentMemberId,
         members,
         query,
       }) as DirectoryMember[],
-    [currentMemberId, members, query],
+    [category, currentMemberId, members, query],
   );
 
   return (
@@ -742,6 +766,7 @@ function NominationExperience({
               title={currentCategory.title}
             />
             <MemberDirectory
+              category={currentCategory}
               currentMemberId={currentUser.member.id}
               members={model.members}
               selectedNominee={selectedDraft.nomineeId}
@@ -817,11 +842,12 @@ function VotingExperience({
   const visibleFinalists = useMemo(
     () =>
       buildVisibleBallotFinalists({
+        categories: model.categories,
         currentMemberId: currentUser.member.id,
         finalists: model.finalists,
         members: model.members,
       }) as Finalist[],
-    [currentUser.member.id, model.finalists, model.members],
+    [currentUser.member.id, model.categories, model.finalists, model.members],
   );
   const categoriesWithFinalists = useMemo(
     () =>
@@ -834,11 +860,19 @@ function VotingExperience({
       ),
     [model.categories, model.currentBallotScope, visibleFinalists],
   );
+  const submittedCategoryIds = useMemo(
+    () => new Set(model.currentMemberVoteReceipt?.categoryIds ?? []),
+    [model.currentMemberVoteReceipt?.categoryIds],
+  );
+  const openCategories = useMemo(
+    () => categoriesWithFinalists.filter((category) => !submittedCategoryIds.has(category.id)),
+    [categoriesWithFinalists, submittedCategoryIds],
+  );
   const safeCategoryIndex = Math.min(
     currentCategoryIndex,
-    Math.max(categoriesWithFinalists.length - 1, 0),
+    Math.max(openCategories.length - 1, 0),
   );
-  const currentCategory = categoriesWithFinalists[safeCategoryIndex];
+  const currentCategory = openCategories[safeCategoryIndex];
   const currentFinalists = useMemo(
     () =>
       currentCategory
@@ -850,16 +884,21 @@ function VotingExperience({
         : [],
     [currentCategory, visibleFinalists],
   );
-  const submittedReceipt = receipt ?? model.currentMemberVoteReceipt?.confirmationCode ?? null;
+  const submittedReceipt =
+    receipt ??
+    (categoriesWithFinalists.length > 0 && openCategories.length === 0
+      ? model.currentMemberVoteReceipt?.confirmationCode ?? null
+      : null);
+  const completedVisibleCategoryCount = categoriesWithFinalists.length - openCategories.length;
   const currentCategoryHasSelection = Boolean(
     currentCategory && selections[currentCategory.id],
   );
-  const hasIncompletePreviousCategory = categoriesWithFinalists
+  const hasIncompletePreviousCategory = openCategories
     .slice(0, safeCategoryIndex)
     .some((category) => !selections[category.id]);
   const allBallotCategoriesSelected =
-    categoriesWithFinalists.length > 0 &&
-    categoriesWithFinalists.every((category) => Boolean(selections[category.id]));
+    openCategories.length > 0 &&
+    openCategories.every((category) => Boolean(selections[category.id]));
 
   const focusCategoryHeader = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -889,7 +928,7 @@ function VotingExperience({
 
   function goToCategory(index: number) {
     setMessage(null);
-    const nextIndex = Math.min(Math.max(index, 0), categoriesWithFinalists.length - 1);
+    const nextIndex = Math.min(Math.max(index, 0), openCategories.length - 1);
 
     shouldFocusCategoryRef.current = true;
     setCurrentCategoryIndex(nextIndex);
@@ -916,12 +955,12 @@ function VotingExperience({
   function submitBallot() {
     setMessage(null);
     const missingCategories = getIncompleteBallotCategoryTitles({
-      categories: categoriesWithFinalists,
+      categories: openCategories,
       selections,
     });
 
     if (missingCategories.length > 0) {
-      const firstMissingIndex = categoriesWithFinalists.findIndex(
+      const firstMissingIndex = openCategories.findIndex(
         (category) => !selections[category.id],
       );
 
@@ -936,10 +975,14 @@ function VotingExperience({
     }
 
     startTransition(async () => {
+      const openCategoryIds = new Set(openCategories.map((category) => category.id));
+      const submittedSelections = Object.fromEntries(
+        Object.entries(selections).filter(([categoryId]) => openCategoryIds.has(categoryId)),
+      );
       const result = (await submitBallotAction({
         ballotScope: model.currentBallotScope,
         cycleId: model.cycle.id,
-        selections,
+        selections: submittedSelections,
       })) as PortalResult;
 
       if (result.ok) {
@@ -953,7 +996,7 @@ function VotingExperience({
   }
 
   const swipeHandlers = useMobileCategorySwipe({
-    enabled: !submittedReceipt && categoriesWithFinalists.length > 1 && Boolean(currentCategory),
+    enabled: !submittedReceipt && openCategories.length > 1 && Boolean(currentCategory),
     onNext: () => goToCategory(safeCategoryIndex + 1),
     onPrevious: () => goToCategory(safeCategoryIndex - 1),
   });
@@ -971,20 +1014,25 @@ function VotingExperience({
           Voting submitted. Results will be available after voting closes and admin publishes winners. Receipt {submittedReceipt}
         </div>
       ) : null}
+      {!submittedReceipt && completedVisibleCategoryCount > 0 ? (
+        <div className="notice good">
+          {completedVisibleCategoryCount} submitted. Finish the remaining categories to complete this ballot.
+        </div>
+      ) : null}
       {categoriesWithFinalists.length === 0 ? <EmptyState message="No ballot is ready yet." /> : null}
       {!submittedReceipt && currentCategory ? (
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
             <CategoryHeader
-              categoryCount={categoriesWithFinalists.length}
+              categoryCount={openCategories.length}
               categoryIndex={safeCategoryIndex}
               completed={currentCategoryHasSelection}
               disabled={pending}
               headerRef={categoryHeaderRef}
-              nextDisabled={safeCategoryIndex >= categoriesWithFinalists.length - 1}
+              nextDisabled={safeCategoryIndex >= openCategories.length - 1}
               nextGlows={
                 currentCategoryHasSelection &&
-                safeCategoryIndex < categoriesWithFinalists.length - 1
+                safeCategoryIndex < openCategories.length - 1
               }
               onNext={() => goToCategory(safeCategoryIndex + 1)}
               onPrevious={() => goToCategory(safeCategoryIndex - 1)}
@@ -1009,7 +1057,7 @@ function VotingExperience({
             className={["primary-action", allBallotCategoriesSelected ? "is-ready" : ""]
               .filter(Boolean)
               .join(" ")}
-            disabled={categoriesWithFinalists.length === 0 || pending}
+            disabled={openCategories.length === 0 || pending}
             onClick={submitBallot}
             type="button"
           >
@@ -1293,8 +1341,9 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
 }
 
 function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
-  const blankCategory = {
+  const blankCategory: CategoryFormState = {
     categoryId: "",
+    nomineeStaffScope: "all",
     title: "",
   };
   const [categoryForm, setCategoryForm] = useState(blankCategory);
@@ -1336,6 +1385,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
     setMessage(null);
     setCategoryForm({
       categoryId: category.id,
+      nomineeStaffScope: category.nomineeStaffScope,
       title: category.title,
     });
     setCategoryModalOpen(true);
@@ -1392,6 +1442,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
             <span>
               <strong>{category.title}</strong>
               <small>
+                {formatNomineeStaffScope(category.nomineeStaffScope)} nominees -{" "}
                 {formatCategoryVotingSummary(category, model.progress.eligibleMemberCount)}
               </small>
             </span>
@@ -1457,6 +1508,24 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
                   ref={categoryNameInputRef}
                   value={categoryForm.title}
                 />
+              </label>
+              <label>
+                <span>Nominees</span>
+                <select
+                  onChange={(event) =>
+                    setCategoryForm((current) => ({
+                      ...current,
+                      nomineeStaffScope: event.target.value as Category["nomineeStaffScope"],
+                    }))
+                  }
+                  value={categoryForm.nomineeStaffScope}
+                >
+                  {nomineeStaffScopeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             <div className="modal-actions">

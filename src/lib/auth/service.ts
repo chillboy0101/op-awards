@@ -23,6 +23,7 @@ export type CurrentUser = {
     chapter: string;
     awardsEligible: boolean;
     photoUrl: string | null;
+    staffType: "main" | "monitoring_only" | "nss";
   };
   role: "member" | "reviewer" | "admin";
 };
@@ -52,6 +53,7 @@ export function demoCurrentUser(): CurrentUser {
       chapter: "North",
       awardsEligible: true,
       photoUrl: null,
+      staffType: "main",
     },
     role: "admin",
   };
@@ -197,6 +199,7 @@ export async function getCurrentUserFromToken(sessionToken: string | undefined) 
       chapter: member.chapter,
       awardsEligible: member.awardsEligible,
       photoUrl: member.photoUrl,
+      staffType: member.staffType as "main" | "monitoring_only" | "nss",
     },
     role,
   } satisfies CurrentUser;

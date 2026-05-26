@@ -12,6 +12,7 @@ type ClerkMemberProfile = {
   email: string;
   name: string;
   photoUrl: string | null;
+  staffType?: string;
 };
 
 type MemberRow = typeof schema.members.$inferSelect;
@@ -42,6 +43,7 @@ function memberFromRow(row: MemberRow): CurrentUser["member"] {
     name: row.name,
     awardsEligible: row.awardsEligible,
     photoUrl: row.photoUrl,
+    staffType: row.staffType as CurrentUser["member"]["staffType"],
   };
 }
 
@@ -76,13 +78,8 @@ async function upsertClerkMember(profile: ClerkMemberProfile) {
   const [created] = await db
     .insert(schema.members)
     .values({
+      ...buildClerkMemberValues({ existing: null, profile }),
       chapter: "Latewatch",
-      clerkUserId: profile.clerkUserId,
-      email: profile.email,
-      name: profile.name,
-      photoUrl: profile.photoUrl,
-      awardsEligible: true,
-      status: "active",
     })
     .returning();
 
@@ -115,6 +112,7 @@ export async function syncCurrentClerkMember({
         name: fullName({ email, firstName, lastName }),
         awardsEligible: true,
         photoUrl: imageUrl || null,
+        staffType: "main",
       },
       role,
     };
@@ -125,6 +123,10 @@ export async function syncCurrentClerkMember({
     email,
     name: fullName({ email, firstName, lastName }),
     photoUrl: imageUrl || null,
+    staffType:
+      typeof publicMetadata?.latewatchStaffType === "string"
+        ? publicMetadata.latewatchStaffType
+        : undefined,
   });
 
   return {
@@ -158,6 +160,11 @@ export async function syncAllowedOrganizationMembers() {
       if (!publicUserData?.userId) continue;
 
       const email = primaryEmailFallback(publicUserData.userId, publicUserData.identifier);
+      const clerkUser = await client.users.getUser(publicUserData.userId);
+      const staffType =
+        typeof clerkUser.publicMetadata?.latewatchStaffType === "string"
+          ? clerkUser.publicMetadata.latewatchStaffType
+          : undefined;
 
       synced.push(
         await upsertClerkMember({
@@ -169,6 +176,7 @@ export async function syncAllowedOrganizationMembers() {
             lastName: publicUserData.lastName,
           }),
           photoUrl: publicUserData.hasImage ? publicUserData.imageUrl : null,
+          staffType,
         }),
       );
     }

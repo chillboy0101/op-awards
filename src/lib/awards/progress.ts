@@ -6,6 +6,7 @@ type ProgressCategory = {
   active?: boolean;
   ballotScope?: string;
   id: string;
+  nomineeStaffScope?: string;
   status?: string;
 };
 
@@ -16,6 +17,7 @@ type ProgressCertification = {
 
 type ProgressFinalist = {
   categoryId: string;
+  nomineeId?: string;
   status: string;
 };
 
@@ -23,6 +25,7 @@ type ProgressMember = {
   active?: boolean;
   awardsEligible?: boolean;
   id: string;
+  staffType?: string;
   status?: string;
 };
 
@@ -33,6 +36,7 @@ type ProgressNomination = {
 
 type ProgressVoteReceipt = {
   ballotScope?: string;
+  categoryIds?: string[];
   memberId: string;
 };
 

@@ -9,6 +9,7 @@ describe("Clerk member sync values", () => {
     email: "member@op.test",
     name: "Member One",
     photoUrl: "https://example.com/photo.jpg",
+    staffType: "nss",
   };
 
   it("preserves a manually excluded member during sync", () => {
@@ -23,6 +24,7 @@ describe("Clerk member sync values", () => {
         email: "member@op.test",
         name: "Member One",
         photoUrl: "https://example.com/photo.jpg",
+        staffType: "nss",
         status: "active",
       },
     );
@@ -35,6 +37,30 @@ describe("Clerk member sync values", () => {
         profile,
       }).awardsEligible,
       true,
+    );
+  });
+
+  it("normalizes missing or unknown Clerk staff types to main staff", () => {
+    assert.equal(
+      buildClerkMemberValues({
+        existing: null,
+        profile: { ...profile, staffType: "" },
+      }).staffType,
+      "main",
+    );
+    assert.equal(
+      buildClerkMemberValues({
+        existing: null,
+        profile: { ...profile, staffType: "contractor" },
+      }).staffType,
+      "main",
+    );
+    assert.equal(
+      buildClerkMemberValues({
+        existing: null,
+        profile: { ...profile, staffType: "monitoring_only" },
+      }).staffType,
+      "monitoring_only",
     );
   });
 });

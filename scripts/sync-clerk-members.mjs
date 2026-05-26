@@ -39,6 +39,10 @@ function fullName({ email, firstName, lastName }) {
   return joined || email.split("@")[0] || "O&P member";
 }
 
+function normalizeStaffType(value) {
+  return ["main", "monitoring_only", "nss"].includes(value) ? value : "main";
+}
+
 async function clerkGet(path) {
   const baseUrl = process.env.CLERK_BACKEND_API_URL?.trim() || "https://api.clerk.com";
   const response = await fetch(`${baseUrl}${path}`, {
@@ -82,6 +86,11 @@ do {
       firstName: publicUserData.first_name ?? publicUserData.firstName,
       lastName: publicUserData.last_name ?? publicUserData.lastName,
     });
+    const clerkUser = await clerkGet(`/v1/users/${clerkUserId}`);
+    const staffType = normalizeStaffType(
+      clerkUser.public_metadata?.latewatchStaffType ??
+        clerkUser.publicMetadata?.latewatchStaffType,
+    );
     const photoUrl = publicUserData.image_url ?? publicUserData.imageUrl ?? null;
     const existing = await sql`
       select id
@@ -98,14 +107,15 @@ do {
           email = ${email},
           name = ${name},
           photo_url = ${photoUrl},
+          staff_type = ${staffType},
           status = 'active',
           updated_at = now()
         where id = ${existing[0].id}
       `;
     } else {
       await sql`
-        insert into members (clerk_user_id, email, name, photo_url, chapter, status)
-        values (${clerkUserId}, ${email}, ${name}, ${photoUrl}, 'Latewatch', 'active')
+        insert into members (clerk_user_id, email, name, photo_url, chapter, staff_type, status)
+        values (${clerkUserId}, ${email}, ${name}, ${photoUrl}, 'Latewatch', ${staffType}, 'active')
       `;
     }
 

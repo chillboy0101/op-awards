@@ -20,6 +20,7 @@ import {
   createAcceptedTieCertificationSnapshot,
   createRunoffCategory,
   createResultCertificationSnapshot,
+  getCompletedCategoryIds,
   getResetCategoryIds,
   getUnresolvedTieCategoryIds,
   suggestFinalists,
@@ -72,6 +73,7 @@ const categorySetupSchema = z.object({
   active: z.boolean().default(true),
   categoryId: z.string().optional(),
   finalistLimit: z.coerce.number().int().min(1).max(20).optional().default(3),
+  nomineeStaffScope: z.enum(["all", "staff", "nss"]).optional().default("all"),
   title: z.string().min(1),
 });
 
@@ -130,6 +132,7 @@ type ValidatedCategorySetup = {
   active: boolean;
   description: string;
   finalistLimit: number;
+  nomineeStaffScope: "all" | "staff" | "nss";
   nominationLimit: number;
   nominationQuestion: string;
   title: string;
@@ -399,6 +402,10 @@ function nominationValidationMessage(reason?: string) {
     return "Choose active members only.";
   }
 
+  if (reason === "NOMINEE_OUT_OF_SCOPE") {
+    return "Choose a member who matches this category.";
+  }
+
   if (reason === "SELF_NOMINATION_NOT_ALLOWED") {
     return "Self-nominations are not allowed.";
   }
@@ -619,11 +626,22 @@ export async function submitBallotAction(input: unknown) {
   if (!cycle) return { ok: false, error: "Voting is not open." };
   if (categoryIds.length === 0) return { ok: false, error: "Select one finalist per category." };
 
-  const [cycleCategories, finalists, members, progress] = await Promise.all([
+  const [cycleCategories, finalists, members, progress, existingReceiptRows] = await Promise.all([
     db.select().from(schema.categories).where(eq(schema.categories.cycleId, cycle.id)),
     db.select().from(schema.finalists),
     db.select().from(schema.members).where(eq(schema.members.status, "active")),
     getCycleCompletionProgress(cycle.id, ballotScope),
+    db
+      .select()
+      .from(schema.voteReceipts)
+      .where(
+        and(
+          eq(schema.voteReceipts.cycleId, parsed.data.cycleId),
+          eq(schema.voteReceipts.memberId, user.member.id),
+          eq(schema.voteReceipts.ballotScope, ballotScope),
+        ),
+      )
+      .limit(1),
   ]);
   const scopeCategories = cycleCategories.filter(
     (category) => category.active && category.ballotScope === ballotScope,
@@ -639,6 +657,7 @@ export async function submitBallotAction(input: unknown) {
 
   const ballotValidation = validateBallotSelections({
     categories: scopeCategories,
+    completedCategoryIds: getCompletedCategoryIds(existingReceiptRows[0]),
     currentMemberId: user.member.id,
     finalists: approvedFinalists,
     members,
@@ -649,11 +668,43 @@ export async function submitBallotAction(input: unknown) {
     return { ok: false, error: "Select one approved finalist per category." };
   }
 
+  const existingReceipt = existingReceiptRows[0] ?? null;
+  const mergedCategoryIds = [
+    ...new Set([
+      ...getCompletedCategoryIds(existingReceipt),
+      ...ballotValidation.categoryIds,
+    ]),
+  ].sort();
+
+  if (existingReceipt) {
+    await db.batch([
+      db.insert(schema.anonymousVotes).values(
+        Object.entries(parsed.data.selections).map(([categoryId, finalistId]) => ({
+          ballotScope,
+          categoryId,
+          cycleId: parsed.data.cycleId,
+          finalistId,
+        })),
+      ),
+      db
+        .update(schema.voteReceipts)
+        .set({
+          categoryIds: mergedCategoryIds,
+          submittedAt: new Date(),
+        })
+        .where(eq(schema.voteReceipts.id, existingReceipt.id)),
+    ]);
+
+    revalidateAwardPages();
+
+    return { ok: true, confirmationCode: existingReceipt.confirmationCode };
+  }
+
   try {
     await db.batch([
       db.insert(schema.voteReceipts).values({
         ballotScope,
-        categoryIds: ballotValidation.categoryIds,
+        categoryIds: mergedCategoryIds,
         confirmationCode,
         cycleId: parsed.data.cycleId,
         memberId: user.member.id,
@@ -708,12 +759,47 @@ export async function upsertCategoryAction(input: unknown) {
   const db = getDb();
 
   if (categoryId) {
+    const [existingCategory] = await db
+      .select()
+      .from(schema.categories)
+      .where(and(eq(schema.categories.id, categoryId), eq(schema.categories.cycleId, cycle.id)))
+      .limit(1);
+
+    if (!existingCategory) return { ok: false, error: "Category not found." };
+    if (existingCategory.nomineeStaffScope !== category.nomineeStaffScope) {
+      const [existingNomination, existingFinalist, existingVote] = await Promise.all([
+        db
+          .select({ id: schema.nominations.id })
+          .from(schema.nominations)
+          .where(eq(schema.nominations.categoryId, categoryId))
+          .limit(1),
+        db
+          .select({ id: schema.finalists.id })
+          .from(schema.finalists)
+          .where(eq(schema.finalists.categoryId, categoryId))
+          .limit(1),
+        db
+          .select({ id: schema.anonymousVotes.id })
+          .from(schema.anonymousVotes)
+          .where(eq(schema.anonymousVotes.categoryId, categoryId))
+          .limit(1),
+      ]);
+
+      if (existingNomination.length || existingFinalist.length || existingVote.length) {
+        return {
+          ok: false,
+          error: "Reset this category before changing its staff scope.",
+        };
+      }
+    }
+
     await db
       .update(schema.categories)
       .set({
         active: category.active,
         description: category.description,
         finalistLimit: category.finalistLimit,
+        nomineeStaffScope: category.nomineeStaffScope,
         nominationLimit: category.nominationLimit,
         nominationQuestion: category.nominationQuestion,
         title: category.title,
@@ -726,6 +812,7 @@ export async function upsertCategoryAction(input: unknown) {
       cycleId: cycle.id,
       description: category.description,
       finalistLimit: category.finalistLimit,
+      nomineeStaffScope: category.nomineeStaffScope,
       nominationLimit: category.nominationLimit,
       nominationQuestion: category.nominationQuestion,
       title: category.title,

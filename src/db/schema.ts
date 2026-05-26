@@ -53,6 +53,7 @@ export const members = pgTable(
     chapter: text("chapter").notNull().default("General"),
     status: memberStatus("status").notNull().default("active"),
     awardsEligible: boolean("awards_eligible").notNull().default(true),
+    staffType: text("staff_type").notNull().default("main"),
     joinedYear: text("joined_year"),
     photoUrl: text("photo_url"),
     ...timestamps,
@@ -140,6 +141,7 @@ export const categories = pgTable(
     parentCategoryId: uuid("parent_category_id"),
     kind: text("kind").notNull().default("standard"),
     ballotScope: text("ballot_scope").notNull().default("main"),
+    nomineeStaffScope: text("nominee_staff_scope").notNull().default("all"),
     ...timestamps,
   },
   (table) => ({
