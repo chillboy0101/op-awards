@@ -9,10 +9,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminPage() {
-  const [model, currentUser] = await Promise.all([
-    getPortalData(),
-    getCurrentUser(),
-  ]);
+  const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     if (hasClerkConfig()) redirect("/sign-in");
@@ -20,6 +17,8 @@ export default async function AdminPage() {
   }
 
   if (currentUser.role !== "admin") redirect("/member?access=admin");
+
+  const model = await getPortalData({ includeClerkRoster: true });
 
   return <AdminAwardsPage currentUser={currentUser} model={model} />;
 }

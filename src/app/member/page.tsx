@@ -16,7 +16,10 @@ export default async function MemberPage() {
     redirect("/");
   }
 
-  const model = await getPortalData({ currentMemberId: currentUser.member.id });
+  const model = await getPortalData({
+    currentMemberId: currentUser.member.id,
+    includeClerkRoster: true,
+  });
 
   return <MemberAwardsPage currentUser={currentUser} model={model} />;
 }
