@@ -81,6 +81,23 @@ describe("cycle completion progress", () => {
     assert.equal(progress.votingRequiredCount, 2);
   });
 
+  it("does not mark every voter complete before finalists exist", () => {
+    const progress = getCycleProgress({
+      ballotScope: "main",
+      categories,
+      members,
+      nominations: [
+        { categoryId: "cat-1", nominatorId: "mem-1" },
+        { categoryId: "cat-2", nominatorId: "mem-1" },
+      ],
+      voteReceipts: [],
+    });
+
+    assert.equal(progress.approvedFinalistCount, 0);
+    assert.equal(progress.voteReceiptCount, 0);
+    assert.equal(progress.votingRequiredCount, 2);
+  });
+
   it("counts only categories and receipts in the requested ballot scope", () => {
     const progress = getCycleProgress({
       ballotScope: "runoff-cat-1",
@@ -112,6 +129,9 @@ describe("cycle completion progress", () => {
         { id: "mem-1", awardsEligible: true, status: "active" },
         { id: "mem-2", awardsEligible: false, status: "active" },
         { id: "mem-3", awardsEligible: true, status: "inactive" },
+      ],
+      finalists: [
+        { categoryId: "cat-1", status: "approved" },
       ],
       nominations: [
         { categoryId: "cat-1", nominatorId: "mem-1" },

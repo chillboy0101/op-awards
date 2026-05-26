@@ -102,7 +102,7 @@ export function getCycleProgress({
   );
   const voteReceiptCount = activeMembers.filter((member) => {
     const requiredCategoryIds = requiredCategoryIdsByMemberId.get(member.id) ?? [];
-    if (requiredCategoryIds.length === 0) return true;
+    if (requiredCategoryIds.length === 0) return approvedFinalists.length > 0;
 
     const receipt = voteReceipts.find(
       (candidate) =>
