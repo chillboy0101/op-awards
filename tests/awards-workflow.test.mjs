@@ -55,16 +55,16 @@ describe("nomination validation", () => {
     assert.deepEqual(result, { ok: true });
   });
 
-  it("allows self-nominations but still rejects inactive nominees and duplicate category nominations", () => {
-    assert.deepEqual(
+  it("rejects self-nominations, inactive nominees, and duplicate category nominations", () => {
+    assert.equal(
       validateNomination({
         members,
         category,
         existingNominations: [],
         nominatorId: "mem-1",
         nomineeId: "mem-1",
-      }),
-      { ok: true },
+      }).reason,
+      "SELF_NOMINATION_NOT_ALLOWED",
     );
 
     assert.equal(
@@ -135,21 +135,14 @@ describe("nomination directory", () => {
     assert.equal(toggleSelection("mem-1", "mem-2"), "mem-2");
   });
 
-  it("includes the signed-in member as a selectable nomination candidate", () => {
+  it("hides the signed-in member from nomination candidates", () => {
     const directory = buildNominationDirectory({
       currentMemberId: "mem-1",
       members,
-      query: "ari",
+      query: "",
     });
 
-    assert.deepEqual(
-      directory.map((member) => ({
-        id: member.id,
-        isSelf: member.isSelf,
-        selectable: member.selectable,
-      })),
-      [{ id: "mem-1", isSelf: true, selectable: true }],
-    );
+    assert.deepEqual(directory.map((member) => member.id), ["mem-2", "mem-4"]);
   });
 
   it("filters excluded members out of nomination search results", () => {
@@ -213,8 +206,8 @@ describe("nomination ballot", () => {
     );
   });
 
-  it("accepts self-selection inside a complete nomination ballot", () => {
-    assert.deepEqual(
+  it("rejects self-selection inside a complete nomination ballot", () => {
+    assert.equal(
       validateNominationBatch({
         categories,
         existingNominations: [],
@@ -224,14 +217,8 @@ describe("nomination ballot", () => {
           { categoryId: "cat-service", nomineeId: "mem-4", statement: "" },
         ],
         nominatorId: "mem-1",
-      }),
-      {
-        ok: true,
-        nominations: [
-          { categoryId: "cat-leadership", nomineeId: "mem-1", statement: "Leading the work" },
-          { categoryId: "cat-service", nomineeId: "mem-4", statement: "" },
-        ],
-      },
+      }).reason,
+      "SELF_NOMINATION_NOT_ALLOWED",
     );
   });
 
@@ -626,7 +613,7 @@ describe("anonymous voting", () => {
     );
   });
 
-  it("accepts a finalist selection for the signed-in member", () => {
+  it("rejects a finalist selection for the signed-in member", () => {
     const communityCategory = { id: "cat-community", active: true, title: "Community" };
     const approvedFinalists = [
       { id: "fin-self", categoryId: communityCategory.id, nomineeId: "mem-1", status: "approved" },
@@ -642,7 +629,7 @@ describe("anonymous voting", () => {
           [communityCategory.id]: "fin-self",
         },
       }),
-      { ok: true, categoryIds: [communityCategory.id] },
+      { ok: false, reason: "INVALID_FINALIST_SELECTION" },
     );
 
     assert.deepEqual(
@@ -656,6 +643,23 @@ describe("anonymous voting", () => {
       }),
       { ok: true, categoryIds: [communityCategory.id] },
     );
+  });
+
+  it("hides the signed-in member from ballot finalists", async () => {
+    const { buildVisibleBallotFinalists } = await import("../src/lib/awards/workflow.mjs");
+
+    const communityCategory = { id: "cat-community", active: true, title: "Community" };
+    const visibleFinalists = buildVisibleBallotFinalists({
+      currentMemberId: "mem-1",
+      finalists: [
+        { id: "fin-self", categoryId: communityCategory.id, nomineeId: "mem-1", status: "approved" },
+        { id: "fin-peer", categoryId: communityCategory.id, nomineeId: "mem-2", status: "approved" },
+        { id: "fin-draft", categoryId: communityCategory.id, nomineeId: "mem-4", status: "draft" },
+      ],
+      members,
+    });
+
+    assert.deepEqual(visibleFinalists.map((finalist) => finalist.id), ["fin-peer"]);
   });
 
   it("rejects a finalist selection for an excluded nominee", () => {

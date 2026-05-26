@@ -639,6 +639,7 @@ export async function submitBallotAction(input: unknown) {
 
   const ballotValidation = validateBallotSelections({
     categories: scopeCategories,
+    currentMemberId: user.member.id,
     finalists: approvedFinalists,
     members,
     selections: parsed.data.selections,

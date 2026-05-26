@@ -24,6 +24,7 @@ import {
 } from "@/app/actions";
 import { getMemberPhaseAccess } from "@/lib/awards/phase";
 import {
+  buildVisibleBallotFinalists,
   buildNominationDirectory,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
@@ -794,7 +795,13 @@ function FinalistCard({
   );
 }
 
-function VotingExperience({ model }: { model: AwardPortalModel }) {
+function VotingExperience({
+  currentUser,
+  model,
+}: {
+  currentUser: CurrentUser;
+  model: AwardPortalModel;
+}) {
   const [selections, setSelections] = useState<VoteSelections>({});
   const [receipt, setReceipt] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -807,18 +814,14 @@ function VotingExperience({ model }: { model: AwardPortalModel }) {
     () => new Map(model.members.map((member) => [member.id, member])),
     [model.members],
   );
-  const eligibleMemberIds = useMemo(
-    () =>
-      new Set(
-        model.members
-          .filter((member) => member.awardsEligible !== false)
-          .map((member) => member.id),
-      ),
-    [model.members],
-  );
   const visibleFinalists = useMemo(
-    () => model.finalists.filter((finalist) => eligibleMemberIds.has(finalist.nomineeId)),
-    [eligibleMemberIds, model.finalists],
+    () =>
+      buildVisibleBallotFinalists({
+        currentMemberId: currentUser.member.id,
+        finalists: model.finalists,
+        members: model.members,
+      }) as Finalist[],
+    [currentUser.member.id, model.finalists, model.members],
   );
   const categoriesWithFinalists = useMemo(
     () =>
@@ -1049,7 +1052,7 @@ export function MemberAwardsPage({
         <NominationExperience currentUser={currentUser} model={model} />
       ) : null}
       {canParticipate && access.canVote ? (
-        <VotingExperience model={model} />
+        <VotingExperience currentUser={currentUser} model={model} />
       ) : null}
       {canParticipate && !access.canNominate && !access.canVote && model.cycle.stage !== "Published" ? (
         <section className="panel">
