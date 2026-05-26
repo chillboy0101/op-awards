@@ -157,6 +157,19 @@ export function getSubmittedNominationCategoryIds({ categories = [], memberId, n
     .filter((categoryId) => submittedCategoryIds.has(categoryId));
 }
 
+export function getOpenNominationCategories(input) {
+  const categories = input?.categories ?? [];
+  const submittedCategoryIds = new Set(getSubmittedNominationCategoryIds(input ?? {}));
+
+  return categories.filter(
+    (category) =>
+      category.active !== false &&
+      (category.kind ?? "standard") !== "runoff" &&
+      (category.ballotScope ?? "main") === "main" &&
+      !submittedCategoryIds.has(category.id),
+  );
+}
+
 /**
  * @param {{
  *   categories?: Array<{ id: string; active?: boolean; kind?: string; ballotScope?: string }>;

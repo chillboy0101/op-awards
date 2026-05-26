@@ -28,7 +28,7 @@ import {
   buildNominationDirectory,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
-  getSubmittedNominationCategoryIds,
+  getOpenNominationCategories,
   groupNominationsByNominator,
   hasSubmittedCompleteNominationBallot,
   toggleSelection,
@@ -640,20 +640,14 @@ function NominationExperience({
   const router = useRouter();
   const categoryHeaderRef = useRef<HTMLDivElement | null>(null);
   const shouldFocusCategoryRef = useRef(false);
-  const submittedCategoryIds = useMemo(
-    () =>
-      new Set(
-        getSubmittedNominationCategoryIds({
-          categories: activeCategories,
-          memberId: currentUser.member.id,
-          nominations: model.nominations,
-        }),
-      ),
-    [activeCategories, currentUser.member.id, model.nominations],
-  );
   const openCategories = useMemo(
-    () => activeCategories.filter((category) => !submittedCategoryIds.has(category.id)),
-    [activeCategories, submittedCategoryIds],
+    () =>
+      getOpenNominationCategories({
+        categories: activeCategories,
+        memberId: currentUser.member.id,
+        nominations: model.nominations,
+      }) as Category[],
+    [activeCategories, currentUser.member.id, model.nominations],
   );
   const safeCategoryIndex = Math.min(
     currentCategoryIndex,

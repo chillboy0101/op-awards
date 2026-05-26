@@ -22,6 +22,7 @@ import {
   createResultCertificationSnapshot,
   getCompletedCategoryIds,
   getInvalidNominationIdsForCategory,
+  getOpenNominationCategories,
   getResetCategoryIds,
   getUnresolvedTieCategoryIds,
   suggestFinalists,
@@ -536,8 +537,23 @@ export async function createNominationsAction(input: unknown) {
     db.select().from(schema.members),
     db.select().from(schema.nominations).where(eq(schema.nominations.cycleId, cycle.id)),
   ]);
-  const nominationValidation = validateNominationBatch({
+  const openCategories = getOpenNominationCategories({
     categories: cycleCategories,
+    memberId: user.member.id,
+    nominations: existingNominations,
+  }) as CategoryRow[];
+  const openCategoryIds = new Set(openCategories.map((category) => category.id));
+
+  if (openCategories.length === 0) {
+    return { ok: false, error: "You already submitted nominations." };
+  }
+
+  if (parsed.data.nominations.some((nomination) => !openCategoryIds.has(nomination.categoryId))) {
+    return { ok: false, error: "You already submitted nominations." };
+  }
+
+  const nominationValidation = validateNominationBatch({
+    categories: openCategories,
     existingNominations,
     members,
     nominations: parsed.data.nominations,

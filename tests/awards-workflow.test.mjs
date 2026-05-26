@@ -17,6 +17,7 @@ import {
   getIncompleteBallotCategoryTitles,
   getInvalidNominationIdsForCategory,
   getNominationSupportThreshold,
+  getOpenNominationCategories,
   getResetCategoryIds,
   getSubmittedNominationCategoryIds,
   getUnresolvedTieCategoryIds,
@@ -345,6 +346,36 @@ describe("nomination ballot", () => {
         ],
       }),
       false,
+    );
+  });
+
+  it("allows repaired members to submit only missing nomination categories", () => {
+    const existingNominations = [
+      { id: "nom-1", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-1" },
+    ];
+    const openCategories = getOpenNominationCategories({
+      categories,
+      memberId: "mem-1",
+      nominations: existingNominations,
+    });
+
+    assert.deepEqual(openCategories.map((openCategory) => openCategory.id), ["cat-leadership"]);
+    assert.deepEqual(
+      validateNominationBatch({
+        categories: openCategories,
+        existingNominations,
+        members,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-4", statement: "" },
+        ],
+        nominatorId: "mem-1",
+      }),
+      {
+        ok: true,
+        nominations: [
+          { categoryId: "cat-leadership", nomineeId: "mem-4", statement: "" },
+        ],
+      },
     );
   });
 
