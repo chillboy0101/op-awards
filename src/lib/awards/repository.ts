@@ -121,6 +121,16 @@ function nominationStatus(status: string): Nomination["status"] {
   return "needs-info";
 }
 
+function compareMembersByName(left: Member, right: Member) {
+  const nameOrder = left.name.trim().localeCompare(right.name.trim(), "en", {
+    sensitivity: "base",
+  });
+
+  if (nameOrder !== 0) return nameOrder;
+
+  return left.email.localeCompare(right.email, "en", { sensitivity: "base" });
+}
+
 function getFallbackPortalData(): AwardPortalModel {
   const progress = getCycleProgress({
     categories: awardModel.categories,
@@ -218,7 +228,7 @@ export async function getPortalData(
       staffType: member.staffType as Member["staffType"],
       status: member.status,
     }),
-  );
+  ).sort(compareMembersByName);
   const memberById = new Map(memberList.map((member) => [member.id, member]));
 
   const categoryList = categories.map(
