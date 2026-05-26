@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -1150,5 +1151,26 @@ describe("anonymous voting", () => {
       }),
       [],
     );
+  });
+});
+
+describe("published winner visibility", () => {
+  it("builds a non-destructive hide update that returns public winners to certification", async () => {
+    const workflow = await import("../src/lib/awards/workflow.mjs");
+    const now = new Date("2026-07-12T14:00:00.000Z");
+
+    assert.equal(typeof workflow.buildHidePublishedWinnersPatch, "function");
+    assert.deepEqual(workflow.buildHidePublishedWinnersPatch({ now }), {
+      publishedAt: null,
+      stage: "certification",
+      updatedAt: now,
+    });
+  });
+
+  it("shows an admin recovery control for already published winners", () => {
+    const adminUi = readFileSync("src/components/awards-portal.tsx", "utf8");
+
+    assert.match(adminUi, /hidePublishedWinnersAction/);
+    assert.match(adminUi, /Hide published winners/);
   });
 });

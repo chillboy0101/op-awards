@@ -115,6 +115,14 @@ export function getResetCategoryIds(categories) {
   return categories.map((category) => category.id).filter(Boolean);
 }
 
+export function buildHidePublishedWinnersPatch({ now = new Date() } = {}) {
+  return {
+    publishedAt: null,
+    stage: "certification",
+    updatedAt: now,
+  };
+}
+
 export function getIncompleteBallotCategoryTitles(input) {
   const categories = input?.categories ?? [];
   const selections = input?.selections ?? {};

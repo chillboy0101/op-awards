@@ -14,6 +14,7 @@ import {
   createNominationsAction,
   createRunoffAction,
   deleteCategoryAction,
+  hidePublishedWinnersAction,
   publishWinnersAction,
   resetAwardsRunAction,
   submitBallotAction,
@@ -1223,6 +1224,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
   const canOpenNominations = model.cycle.configuredStage === "Draft";
   const canPublish = model.cycle.stage === "Certification" && !model.hasUnresolvedTies;
   const canShowPublish = model.cycle.stage === "Certification" || model.cycle.stage === "Published";
+  const canHidePublished = model.cycle.stage === "Published";
 
   function openNominations() {
     setMessage(null);
@@ -1249,6 +1251,22 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
       const result = (await publishWinnersAction(model.cycle.id)) as PortalResult;
 
       setMessage(result.ok ? "Winners published." : result.error ?? "Unable to publish winners.");
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function hidePublishedWinners() {
+    const confirmed = window.confirm(
+      "Hide published winners from the public page? Certified results stay saved and can be published again.",
+    );
+
+    if (!confirmed) return;
+
+    setMessage(null);
+    startTransition(async () => {
+      const result = (await hidePublishedWinnersAction(model.cycle.id)) as PortalResult;
+
+      setMessage(result.ok ? "Winners hidden from public page." : result.error ?? "Unable to hide winners.");
       if (result.ok) router.refresh();
     });
   }
@@ -1337,6 +1355,11 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
               type="button"
             >
               {pending ? "Publishing" : model.cycle.stage === "Published" ? "Published" : "Final publish winners"}
+            </button>
+          ) : null}
+          {canHidePublished ? (
+            <button className="secondary-action" disabled={pending} onClick={hidePublishedWinners} type="button">
+              {pending ? "Hiding" : "Hide published winners"}
             </button>
           ) : null}
           <button className="danger-action" disabled={pending} onClick={resetAwardsRun} type="button">

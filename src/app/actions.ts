@@ -16,6 +16,7 @@ import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 import {
   buildDraftFinalists,
   buildAwardCategorySetup,
+  buildHidePublishedWinnersPatch,
   calculateResults,
   createAcceptedTieCertificationSnapshot,
   createRunoffCategory,
@@ -1796,6 +1797,60 @@ export async function publishWinnersAction(cycleId: string) {
     actorRole: user.role,
     target: cycleId,
     summary: "Admin published winners publicly.",
+  });
+
+  revalidateAwardPages();
+
+  return { ok: true };
+}
+
+export async function hidePublishedWinnersAction(cycleId: string) {
+  const user = await getCurrentUser();
+
+  if (!user) return { ok: false, error: "Authentication required." };
+
+  try {
+    assertRole(user.role, ["admin"]);
+  } catch {
+    return { ok: false, error: "Admin access required." };
+  }
+
+  if (!hasDatabaseUrl()) return { ok: true, demo: true };
+
+  const now = new Date();
+  const db = getDb();
+  const [cycle] = await db
+    .select()
+    .from(schema.awardCycles)
+    .where(eq(schema.awardCycles.id, cycleId))
+    .limit(1);
+
+  if (!cycle) return { ok: false, error: "Cycle not found." };
+
+  const progress = await getCycleCompletionProgress(cycle.id, "main");
+  const effectiveStage = getCycleEffectiveStage(cycle, progress);
+
+  if (effectiveStage !== "Published" && !cycle.publishedAt) {
+    return { ok: false, error: "Winners are not published." };
+  }
+
+  const hidePatch = buildHidePublishedWinnersPatch({ now }) as {
+    publishedAt: null;
+    stage: "certification";
+    updatedAt: Date;
+  };
+
+  await db
+    .update(schema.awardCycles)
+    .set(hidePatch)
+    .where(eq(schema.awardCycles.id, cycleId));
+
+  await db.insert(schema.auditEvents).values({
+    action: "hide_published_winners",
+    actorMemberId: user.member.id,
+    actorRole: user.role,
+    target: cycleId,
+    summary: "Admin hid published winners from the public page.",
   });
 
   revalidateAwardPages();
