@@ -5,6 +5,9 @@ import { getPortalData } from "@/lib/awards/repository";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { hasClerkConfig } from "@/lib/auth/clerk-config";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminPage() {
   const [model, currentUser] = await Promise.all([
     getPortalData(),

@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { getPortalData } from "@/lib/awards/repository";
 import { hasClerkConfig } from "@/lib/auth/clerk-config";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function MemberPage() {
   const currentUser = await getCurrentUser();
 
