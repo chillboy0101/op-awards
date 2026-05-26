@@ -11,6 +11,7 @@ const serverEnvSchema = z.object({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().default("/sign-in"),
   NEXT_PUBLIC_CLERK_SIGN_UP_URL: z.string().default("/sign-up"),
+  POSTGRES_URL: z.string().url().optional(),
   RESEND_API_KEY: z.string().optional(),
 });
 

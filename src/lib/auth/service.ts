@@ -70,7 +70,7 @@ export async function requestMagicLink(emailInput: string) {
     return {
       ok: true,
       demo: true,
-      message: "Demo mode: configure DATABASE_URL to send real magic links.",
+      message: "Demo mode: configure POSTGRES_URL or DATABASE_URL to send real magic links.",
     };
   }
 

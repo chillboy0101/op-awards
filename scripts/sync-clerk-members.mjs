@@ -29,6 +29,12 @@ function requiredEnv(key) {
   return value;
 }
 
+function requiredDatabaseUrl() {
+  const value = process.env.POSTGRES_URL?.trim() || process.env.DATABASE_URL?.trim();
+  if (!value) throw new Error("POSTGRES_URL or DATABASE_URL is required.");
+  return value;
+}
+
 function primaryEmailFallback(clerkUserId, identifier) {
   if (identifier?.includes("@")) return identifier.toLowerCase();
   return `${clerkUserId}@clerk.local`;
@@ -61,7 +67,7 @@ async function clerkGet(path) {
 
 await loadLocalEnv();
 
-const sql = neon(requiredEnv("DATABASE_URL"));
+const sql = neon(requiredDatabaseUrl());
 const organizationId = requiredEnv("CLERK_ALLOWED_ORG_ID");
 let offset = 0;
 const limit = 100;

@@ -7,15 +7,19 @@ type Database = ReturnType<typeof drizzle<typeof schema>>;
 
 let cachedDb: Database | null = null;
 
+function resolveDatabaseUrl() {
+  return process.env.POSTGRES_URL || process.env.DATABASE_URL;
+}
+
 export function hasDatabaseUrl() {
-  return Boolean(process.env.DATABASE_URL);
+  return Boolean(resolveDatabaseUrl());
 }
 
 export function getDatabaseUrl() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = resolveDatabaseUrl();
 
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("POSTGRES_URL or DATABASE_URL is not configured.");
   }
 
   return databaseUrl;

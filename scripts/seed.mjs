@@ -1,9 +1,9 @@
 import { neon } from "@neondatabase/serverless";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.POSTGRES_URL || process.env.DATABASE_URL;
 
 if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to seed O&P Awards.");
+  throw new Error("POSTGRES_URL or DATABASE_URL is required to seed O&P Awards.");
 }
 
 const sql = neon(databaseUrl);

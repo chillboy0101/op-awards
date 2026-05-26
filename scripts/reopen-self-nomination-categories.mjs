@@ -52,9 +52,9 @@ async function loadLocalEnv() {
   }
 }
 
-function requiredEnv(key) {
-  const value = process.env[key]?.trim();
-  if (!value) throw new Error(`${key} is required.`);
+function requiredDatabaseUrl() {
+  const value = process.env.POSTGRES_URL?.trim() || process.env.DATABASE_URL?.trim();
+  if (!value) throw new Error("POSTGRES_URL or DATABASE_URL is required.");
   return value;
 }
 
@@ -123,7 +123,7 @@ async function main() {
   await loadLocalEnv();
 
   const args = parseArgs(process.argv.slice(2));
-  const sql = neon(requiredEnv("DATABASE_URL"));
+  const sql = neon(requiredDatabaseUrl());
   const rows = await loadLatestCycleRows(sql);
   const plan = planSelfNominationRepair(rows);
   const summary = summarizeSelfNominationRepair(plan);

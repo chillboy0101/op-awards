@@ -11,8 +11,8 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-For database-backed local runs, copy `.env.example` to `.env.local`, set `DATABASE_URL`,
-then run:
+For database-backed local runs, copy `.env.example` to `.env.local`, set `POSTGRES_URL`
+or `DATABASE_URL`, then run:
 
 ```bash
 npm run db:migrate
