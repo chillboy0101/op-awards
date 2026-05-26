@@ -28,6 +28,7 @@ import {
   buildNominationDirectory,
   formatCategoryVotingSummary,
   getIncompleteBallotCategoryTitles,
+  getSubmittedNominationCategoryIds,
   groupNominationsByNominator,
   hasSubmittedCompleteNominationBallot,
   toggleSelection,
@@ -646,11 +647,26 @@ function NominationExperience({
   const router = useRouter();
   const categoryHeaderRef = useRef<HTMLDivElement | null>(null);
   const shouldFocusCategoryRef = useRef(false);
+  const submittedCategoryIds = useMemo(
+    () =>
+      new Set(
+        getSubmittedNominationCategoryIds({
+          categories: activeCategories,
+          memberId: currentUser.member.id,
+          nominations: model.nominations,
+        }),
+      ),
+    [activeCategories, currentUser.member.id, model.nominations],
+  );
+  const openCategories = useMemo(
+    () => activeCategories.filter((category) => !submittedCategoryIds.has(category.id)),
+    [activeCategories, submittedCategoryIds],
+  );
   const safeCategoryIndex = Math.min(
     currentCategoryIndex,
-    Math.max(activeCategories.length - 1, 0),
+    Math.max(openCategories.length - 1, 0),
   );
-  const currentCategory = activeCategories[safeCategoryIndex];
+  const currentCategory = openCategories[safeCategoryIndex];
   const selectedDraft = currentCategory
     ? nominationDrafts[currentCategory.id] ?? { nomineeId: "", statement: "" }
     : { nomineeId: "", statement: "" };
@@ -662,12 +678,12 @@ function NominationExperience({
       nominations: model.nominations,
     });
   const currentCategoryHasSelection = Boolean(selectedDraft.nomineeId);
-  const hasIncompletePreviousCategory = activeCategories
+  const hasIncompletePreviousCategory = openCategories
     .slice(0, safeCategoryIndex)
     .some((category) => !nominationDrafts[category.id]?.nomineeId);
   const allCategoriesSelected =
-    activeCategories.length > 0 &&
-    activeCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
+    openCategories.length > 0 &&
+    openCategories.every((category) => Boolean(nominationDrafts[category.id]?.nomineeId));
 
   const focusCategoryHeader = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -697,7 +713,7 @@ function NominationExperience({
 
   function goToCategory(index: number) {
     setMessage(null);
-    const nextIndex = Math.min(Math.max(index, 0), activeCategories.length - 1);
+    const nextIndex = Math.min(Math.max(index, 0), openCategories.length - 1);
 
     shouldFocusCategoryRef.current = true;
     setCurrentCategoryIndex(nextIndex);
@@ -721,7 +737,7 @@ function NominationExperience({
     setMessage(null);
     startTransition(async () => {
       const result = (await createNominationsAction({
-        nominations: activeCategories.map((category) => ({
+        nominations: openCategories.map((category) => ({
           categoryId: category.id,
           nomineeId: nominationDrafts[category.id]?.nomineeId ?? "",
           statement: "",
@@ -735,7 +751,7 @@ function NominationExperience({
   }
 
   const swipeHandlers = useMobileCategorySwipe({
-    enabled: !hasSubmittedNominations && activeCategories.length > 1 && Boolean(currentCategory),
+    enabled: !hasSubmittedNominations && openCategories.length > 1 && Boolean(currentCategory),
     onNext: () => goToCategory(safeCategoryIndex + 1),
     onPrevious: () => goToCategory(safeCategoryIndex - 1),
   });
@@ -752,13 +768,13 @@ function NominationExperience({
         <>
           <section className="ballot-category guided-ballot" key={currentCategory.id}>
             <CategoryHeader
-              categoryCount={activeCategories.length}
+              categoryCount={openCategories.length}
               categoryIndex={safeCategoryIndex}
               completed={currentCategoryHasSelection}
               disabled={pending}
               headerRef={categoryHeaderRef}
-              nextDisabled={safeCategoryIndex >= activeCategories.length - 1}
-              nextGlows={currentCategoryHasSelection && safeCategoryIndex < activeCategories.length - 1}
+              nextDisabled={safeCategoryIndex >= openCategories.length - 1}
+              nextGlows={currentCategoryHasSelection && safeCategoryIndex < openCategories.length - 1}
               onNext={() => goToCategory(safeCategoryIndex + 1)}
               onPrevious={() => goToCategory(safeCategoryIndex - 1)}
               previousDisabled={safeCategoryIndex === 0}

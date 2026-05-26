@@ -40,12 +40,26 @@ export function getCycleProgress({
   const activeMemberIds = new Set(activeMembers.map((member) => member.id));
   const activeCategoryIds = new Set(activeCategories.map((category) => category.id));
   const activeMemberById = new Map(activeMembers.map((member) => [member.id, member]));
+  const activeCategoryById = new Map(activeCategories.map((category) => [category.id, category]));
   const nominationsByMember = new Map();
   let nominationSubmissionCount = 0;
 
   for (const nomination of nominations) {
     if (!activeMemberIds.has(nomination.nominatorId)) continue;
     if (!activeCategoryIds.has(nomination.categoryId)) continue;
+    if (nomination.nomineeId && nomination.nomineeId === nomination.nominatorId) continue;
+    if (nomination.nomineeId && !activeMemberIds.has(nomination.nomineeId)) continue;
+
+    const category = activeCategoryById.get(nomination.categoryId);
+    if (
+      nomination.nomineeId &&
+      !memberMatchesNomineeStaffScope(
+        activeMemberById.get(nomination.nomineeId),
+        category?.nomineeStaffScope,
+      )
+    ) {
+      continue;
+    }
 
     nominationSubmissionCount += 1;
 

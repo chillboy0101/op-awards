@@ -574,6 +574,7 @@ export async function createNominationsAction(input: unknown) {
       ...existingNominations,
       ...validatedNominations.map((nomination) => ({
         categoryId: nomination.categoryId,
+        nomineeId: nomination.nomineeId,
         nominatorId: user.member.id,
       })),
     ],

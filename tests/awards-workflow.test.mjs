@@ -321,6 +321,31 @@ describe("nomination ballot", () => {
       false,
     );
   });
+
+  it("does not count historical self-nominations as completed categories", () => {
+    assert.deepEqual(
+      getSubmittedNominationCategoryIds({
+        categories,
+        memberId: "mem-1",
+        nominations: [
+          { id: "nom-1", categoryId: "cat-leadership", nomineeId: "mem-1", nominatorId: "mem-1" },
+          { id: "nom-2", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-1" },
+        ],
+      }),
+      ["cat-service"],
+    );
+    assert.equal(
+      hasSubmittedCompleteNominationBallot({
+        categories,
+        memberId: "mem-1",
+        nominations: [
+          { id: "nom-1", categoryId: "cat-leadership", nomineeId: "mem-1", nominatorId: "mem-1" },
+          { id: "nom-2", categoryId: "cat-service", nomineeId: "mem-2", nominatorId: "mem-1" },
+        ],
+      }),
+      false,
+    );
+  });
 });
 
 describe("finalist workflow", () => {

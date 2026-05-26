@@ -129,7 +129,7 @@ export function getIncompleteBallotCategoryTitles(input) {
  * @param {{
  *   categories?: Array<{ id: string; active?: boolean; kind?: string; ballotScope?: string }>;
  *   memberId: string;
- *   nominations?: Array<{ categoryId: string; nominatorId: string }>;
+ *   nominations?: Array<{ categoryId: string; nomineeId?: string; nominatorId: string }>;
  * }} input
  * @returns {string[]}
  */
@@ -147,6 +147,7 @@ export function getSubmittedNominationCategoryIds({ categories = [], memberId, n
   const submittedCategoryIds = new Set(
     nominations
       .filter((nomination) => nomination.nominatorId === memberId)
+      .filter((nomination) => !nomination.nomineeId || nomination.nomineeId !== memberId)
       .filter((nomination) => activeCategoryIds.has(nomination.categoryId))
       .map((nomination) => nomination.categoryId),
   );
@@ -160,7 +161,7 @@ export function getSubmittedNominationCategoryIds({ categories = [], memberId, n
  * @param {{
  *   categories?: Array<{ id: string; active?: boolean; kind?: string; ballotScope?: string }>;
  *   memberId: string;
- *   nominations?: Array<{ categoryId: string; nominatorId: string }>;
+ *   nominations?: Array<{ categoryId: string; nomineeId?: string; nominatorId: string }>;
  * }} input
  * @returns {boolean}
  */

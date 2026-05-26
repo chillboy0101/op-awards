@@ -35,6 +35,20 @@ describe("cycle completion progress", () => {
     assert.equal(progress.nominationsRequiredCount, 4);
   });
 
+  it("does not count historical self-nominations toward nomination progress", () => {
+    const progress = getCycleProgress({
+      categories,
+      members,
+      nominations: [
+        { categoryId: "cat-1", nomineeId: "mem-1", nominatorId: "mem-1" },
+        { categoryId: "cat-2", nomineeId: "mem-2", nominatorId: "mem-1" },
+      ],
+    });
+
+    assert.equal(progress.nominationSubmissionCount, 1);
+    assert.equal(progress.nominationCompletionCount, 0);
+  });
+
   it("counts approved finalist categories and active member vote receipts", () => {
     const progress = getCycleProgress({
       ballotScope: "main",
