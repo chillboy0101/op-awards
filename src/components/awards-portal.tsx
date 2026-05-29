@@ -1851,13 +1851,13 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
           <h2>Nomination review</h2>
         </div>
       </div>
-      <div className="admin-columns">
-        <div className="queue-block">
+      <div className="review-layout">
+        <div className="queue-block nomination-submissions-block">
           <div className="queue-head">
             <h3>Submitted nominations</h3>
             <small>{nominationGroups.length} ballots</small>
           </div>
-          <div className="mini-list">
+          <div className="mini-list nomination-review-list">
             {nominationGroups.length === 0 ? (
               <EmptyState message="No nominations submitted yet." />
             ) : null}
@@ -1883,7 +1883,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
             ))}
           </div>
         </div>
-        <div className="queue-block">
+        <div className="queue-block voting-nominees-block">
           <div className="queue-head">
             <h3>Voting nominees</h3>
             <small>
@@ -1891,7 +1891,7 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
               {draftNomineeCount ? ` / ${draftNomineeCount} legacy drafts` : ""}
             </small>
           </div>
-          <div className="mini-list">
+          <div className="mini-list voting-nominee-list">
             {model.finalistReview.length === 0 ? (
               <EmptyState message="Voting nominees appear automatically after nominations complete." />
             ) : null}

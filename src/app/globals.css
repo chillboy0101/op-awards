@@ -1085,6 +1085,11 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.review-layout {
+  display: grid;
+  gap: 18px;
+}
+
 .queue-block {
   display: grid;
   align-content: start;
@@ -1215,6 +1220,11 @@ textarea:focus {
 .review-note {
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.nomination-review-list,
+.voting-nominee-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .nomination-review-card {
@@ -1438,12 +1448,14 @@ textarea:focus {
   .admin-columns,
   .category-list,
   .finalist-grid,
+  .nomination-review-list,
   .nomination-choice-list,
   .participation-list,
   .progress-grid,
   .schedule-form-grid,
   .chip-row,
-  .vote-submission-grid {
+  .vote-submission-grid,
+  .voting-nominee-list {
     grid-template-columns: 1fr;
   }
 
