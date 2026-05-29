@@ -1250,4 +1250,14 @@ describe("published winner visibility", () => {
     assert.match(adminUi, /hidePublishedWinnersAction/);
     assert.match(adminUi, /Hide published winners/);
   });
+
+  it("auto-refreshes the admin control room while the tab is visible", () => {
+    const adminUi = readFileSync("src/components/awards-portal.tsx", "utf8");
+
+    assert.match(adminUi, /function useAdminAutoRefresh/);
+    assert.match(adminUi, /setInterval/);
+    assert.match(adminUi, /document\.visibilityState !== "visible"/);
+    assert.match(adminUi, /router\.refresh\(\)/);
+    assert.match(adminUi, /useAdminAutoRefresh\(\)/);
+  });
 });

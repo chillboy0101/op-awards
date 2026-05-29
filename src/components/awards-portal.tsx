@@ -270,6 +270,31 @@ function useAutoDismissMessage(
   }, [delayMs, message, setMessage]);
 }
 
+function useAdminAutoRefresh(intervalMs = 15000) {
+  const router = useRouter();
+
+  useEffect(() => {
+    function refreshIfVisible() {
+      if (document.visibilityState !== "visible") return;
+
+      router.refresh();
+    }
+
+    const interval = window.setInterval(refreshIfVisible, intervalMs);
+
+    function refreshWhenVisible() {
+      refreshIfVisible();
+    }
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [intervalMs, router]);
+}
+
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const CELEBRATION_COLORS = ["#efc76d", "#176b60", "#8d3b5c", "#2d7fba", "#f3a83b", "#2f8f83", "#bf3f65"];
 
@@ -1975,6 +2000,8 @@ export function AdminAwardsPage({
   currentUser: CurrentUser;
   model: AwardPortalModel;
 }) {
+  useAdminAutoRefresh();
+
   return (
     <main className="app-shell">
       <Header active="admin" />
