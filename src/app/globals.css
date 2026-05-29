@@ -587,6 +587,26 @@ textarea:focus {
   margin: 12px 0;
 }
 
+.participation-tracker {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.participation-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.participation-row {
+  justify-content: flex-start;
+}
+
+.participation-row > span {
+  min-width: 0;
+}
+
 .choice-chip {
   min-height: 52px;
   padding: 10px 12px;
@@ -1403,6 +1423,7 @@ textarea:focus {
   .admin-columns,
   .category-list,
   .finalist-grid,
+  .participation-list,
   .progress-grid,
   .schedule-form-grid,
   .chip-row,

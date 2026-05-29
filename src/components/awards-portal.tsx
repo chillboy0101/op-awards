@@ -1215,6 +1215,50 @@ function AdminRoster({ model }: { model: AwardPortalModel }) {
   );
 }
 
+function formatMissingCategoryCount(count?: number) {
+  const categoryCount = count ?? 0;
+  if (categoryCount <= 0) return "Pending";
+
+  return `${categoryCount} categor${categoryCount === 1 ? "y" : "ies"} left`;
+}
+
+function AdminParticipationTracker({ model }: { model: AwardPortalModel }) {
+  const isNominationStage = model.cycle.stage === "Nominations";
+  const isVotingStage = model.cycle.stage === "Voting";
+
+  if (!isNominationStage && !isVotingStage) return null;
+
+  const submissions = isNominationStage ? model.nominationSubmissions : model.voteSubmissions;
+  const pending = submissions.pending;
+  const submittedCount = submissions.submitted.length;
+  const totalCount = submittedCount + pending.length;
+  const title = isNominationStage ? "Left to nominate" : "Left to vote";
+  const emptyMessage = isNominationStage ? "Everyone has nominated." : "Everyone has voted.";
+
+  return (
+    <div className="participation-tracker">
+      <div className="queue-head">
+        <h3>{title}</h3>
+        <small>
+          {submittedCount}/{totalCount} complete
+        </small>
+      </div>
+      <div className="mini-list participation-list">
+        {pending.length === 0 ? <EmptyState message={emptyMessage} /> : null}
+        {pending.map((member) => (
+          <article className="mini-row participation-row" key={member.memberId}>
+            <PersonAvatar member={member} name={member.name} />
+            <span>
+              <strong>{member.name}</strong>
+              <small>{formatMissingCategoryCount(member.missingCategoryCount)}</small>
+            </span>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminCycle({ model }: { model: AwardPortalModel }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -1334,6 +1378,7 @@ function AdminCycle({ model }: { model: AwardPortalModel }) {
           Voting stays open until every eligible member submits one ballot.
         </span>
       </div>
+      <AdminParticipationTracker model={model} />
       <div className="cycle-actions">
         <div className="cycle-action-copy">
           <span>Review, results, and publishing stay under admin control.</span>
@@ -1600,7 +1645,7 @@ function AdminCategoryManager({ model }: { model: AwardPortalModel }) {
   );
 }
 
-function formatSubmittedAt(value: string | null) {
+function formatSubmittedAt(value: string | null | undefined) {
   if (!value) return "Submitted";
 
   const date = new Date(value);

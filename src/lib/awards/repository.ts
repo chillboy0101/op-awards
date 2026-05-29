@@ -14,10 +14,34 @@ import {
 import { getEffectiveCycleStage } from "@/lib/awards/phase";
 import { getCycleProgress, type CycleProgress } from "@/lib/awards/progress";
 import {
-  buildVisibleBallotFinalists,
   getCompletedCategoryIds,
+  getNominationSubmissionStatus,
   getUnresolvedTieCategoryIds,
+  getVotingSubmissionStatus,
 } from "@/lib/awards/workflow.mjs";
+
+type PendingParticipationMember = {
+  memberId: string;
+  missingCategoryCount?: number;
+  name: string;
+  photoUrl?: string | null;
+};
+
+type SubmittedParticipationMember = {
+  memberId: string;
+  name: string;
+  photoUrl?: string | null;
+  submittedAt?: string | null;
+};
+
+type RawSubmittedParticipationMember = Omit<SubmittedParticipationMember, "submittedAt"> & {
+  submittedAt?: Date | string | null;
+};
+
+type ParticipationStatus = {
+  pending: PendingParticipationMember[];
+  submitted: SubmittedParticipationMember[];
+};
 
 export type AwardPortalModel = {
   audit: AuditEvent[];
@@ -53,6 +77,7 @@ export type AwardPortalModel = {
   }[];
   hasUnresolvedTies: boolean;
   members: Member[];
+  nominationSubmissions: ParticipationStatus;
   nominations: Nomination[];
   phases: typeof awardModel.phases;
   progress: CycleProgress;
@@ -73,14 +98,7 @@ export type AwardPortalModel = {
   }[];
   voteSubmissions: {
     ballotScope: string;
-    pending: { memberId: string; name: string; photoUrl?: string | null }[];
-    submitted: {
-      memberId: string;
-      name: string;
-      photoUrl?: string | null;
-      submittedAt: string | null;
-    }[];
-  };
+  } & ParticipationStatus;
 };
 type NominationVisibility = "none" | "own" | "redacted" | "full";
 type PortalDataOptions = {
@@ -120,6 +138,15 @@ function dateToIso(date?: Date | string | null) {
   return date.toISOString();
 }
 
+function normalizeSubmittedMembers(
+  members: RawSubmittedParticipationMember[],
+): SubmittedParticipationMember[] {
+  return members.map((member) => ({
+    ...member,
+    submittedAt: dateToIso(member.submittedAt),
+  }));
+}
+
 function nominationStatus(status: string): Nomination["status"] {
   if (status === "needs_info") return "needs-info";
   if (status === "approved" || status === "recommended" || status === "new") return status;
@@ -151,6 +178,18 @@ function getFallbackPortalData(): AwardPortalModel {
       awardModel.categories.find((category) => category.title === result.category)?.id ??
       result.category,
   }));
+  const nominationSubmissions = getNominationSubmissionStatus({
+    categories: awardModel.categories,
+    members: awardModel.members,
+    nominations: awardModel.nominations,
+  });
+  const voteSubmissionStatus = getVotingSubmissionStatus({
+    ballotScope: "main",
+    categories: awardModel.categories,
+    finalists: awardModel.finalists,
+    members: awardModel.members,
+    voteReceipts: [],
+  });
 
   return {
     ...awardModel,
@@ -172,12 +211,13 @@ function getFallbackPortalData(): AwardPortalModel {
     },
     finalistReview: [],
     hasUnresolvedTies: false,
+    nominationSubmissions,
     privateResults: fallbackPrivateResults,
     progress,
     voteSubmissions: {
       ballotScope: "main",
-      pending: [],
-      submitted: [],
+      pending: voteSubmissionStatus.pending,
+      submitted: normalizeSubmittedMembers(voteSubmissionStatus.submitted),
     },
   };
 }
@@ -525,67 +565,22 @@ export async function getPortalData(options: PortalDataOptions = {}): Promise<Aw
           (receipt.ballotScope ?? "main") === currentBallotScope,
       )
     : null;
-  const scopedVoteReceipts = voteReceipts.filter(
-    (receipt) => (receipt.ballotScope ?? "main") === currentBallotScope,
-  );
-  const voteReceiptByMemberId = new Map(
-    scopedVoteReceipts.map((receipt) => [receipt.memberId, receipt]),
-  );
-  const eligibleVotingMembers = memberList
-    .filter((member) => member.status === "active" && member.awardsEligible !== false)
-    .sort((left, right) => left.name.localeCompare(right.name));
-  const visibleVotingCategoryIdsForMember = (member: Member) => {
-    const visibleFinalists = buildVisibleBallotFinalists({
-      categories: categoryList,
-      currentMemberId: member.id,
-      finalists: finalistList,
-      members: memberList,
-    });
-
-    return categoryList
-      .filter(
-        (category) =>
-          category.active &&
-          category.ballotScope === currentBallotScope &&
-          visibleFinalists.some(
-            (finalist) =>
-              finalist.categoryId === category.id && finalist.status === "approved",
-          ),
-      )
-      .map((category) => category.id);
-  };
-  const memberHasCompletedVoting = (member: Member) => {
-    const requiredCategoryIds = visibleVotingCategoryIdsForMember(member);
-    if (requiredCategoryIds.length === 0) return true;
-
-    const receipt = voteReceiptByMemberId.get(member.id);
-    if (!receipt) return false;
-
-    const completedCategoryIds = getCompletedCategoryIds(receipt);
-
-    return requiredCategoryIds.every((categoryId) => completedCategoryIds.includes(categoryId));
-  };
+  const nominationSubmissions = getNominationSubmissionStatus({
+    categories: categoryList,
+    members: memberList,
+    nominations,
+  });
+  const voteSubmissionStatus = getVotingSubmissionStatus({
+    ballotScope: currentBallotScope,
+    categories: categoryList,
+    finalists: finalistList,
+    members: memberList,
+    voteReceipts,
+  });
   const voteSubmissions = {
     ballotScope: currentBallotScope,
-    pending: eligibleVotingMembers
-      .filter((member) => !memberHasCompletedVoting(member))
-      .map((member) => ({
-        memberId: member.id,
-        name: member.name,
-        photoUrl: member.photoUrl,
-      })),
-    submitted: eligibleVotingMembers
-      .filter((member) => memberHasCompletedVoting(member))
-      .map((member) => {
-        const receipt = voteReceiptByMemberId.get(member.id);
-
-        return {
-          memberId: member.id,
-          name: member.name,
-          photoUrl: member.photoUrl,
-          submittedAt: dateToIso(receipt?.submittedAt),
-        };
-      }),
+    pending: voteSubmissionStatus.pending,
+    submitted: normalizeSubmittedMembers(voteSubmissionStatus.submitted),
   };
   const nominationVisibility =
     options.nominationVisibility ?? (options.currentMemberId ? "own" : "none");
@@ -653,6 +648,7 @@ export async function getPortalData(options: PortalDataOptions = {}): Promise<Aw
     finalists: finalistList,
     hasUnresolvedTies: unresolvedTieIds.size > 0,
     members: memberList,
+    nominationSubmissions,
     nominations: visibleNominations,
     phases: awardModel.phases,
     privateResults,

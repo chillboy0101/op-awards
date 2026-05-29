@@ -46,6 +46,74 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
+function compareMembersByName(left, right) {
+  const leftName = left?.name ?? "";
+  const rightName = right?.name ?? "";
+  const nameOrder = leftName.localeCompare(rightName, "en", { sensitivity: "base" });
+
+  if (nameOrder !== 0) return nameOrder;
+
+  return (left?.email ?? "").localeCompare(right?.email ?? "", "en", { sensitivity: "base" });
+}
+
+function eligibleParticipationMembers(members = []) {
+  return members
+    .filter((member) => member.status !== "inactive" && member.awardsEligible !== false)
+    .sort(compareMembersByName);
+}
+
+function participationMember(member, extra = {}) {
+  return {
+    memberId: member.id,
+    name: member.name ?? member.email ?? "Member",
+    photoUrl: member.photoUrl ?? null,
+    ...extra,
+  };
+}
+
+function activeNominationCategories(categories = []) {
+  return categories.filter(
+    (category) =>
+      category.active !== false &&
+      (category.kind ?? "standard") !== "runoff" &&
+      (category.ballotScope ?? "main") === "main",
+  );
+}
+
+function buildValidNominationCategoryIdsByMember({
+  categories = [],
+  members = [],
+  nominations = [],
+}) {
+  const activeCategories = activeNominationCategories(categories);
+  const activeCategoryById = new Map(activeCategories.map((category) => [category.id, category]));
+  const eligibleMembers = eligibleParticipationMembers(members);
+  const eligibleMemberById = new Map(eligibleMembers.map((member) => [member.id, member]));
+  const categoryIdsByMemberId = new Map();
+
+  for (const nomination of nominations) {
+    const category = activeCategoryById.get(nomination.categoryId);
+    const nominator = eligibleMemberById.get(nomination.nominatorId);
+
+    if (!category || !nominator) continue;
+    if (nomination.nomineeId && nomination.nomineeId === nomination.nominatorId) continue;
+
+    if (nomination.nomineeId) {
+      const nominee = eligibleMemberById.get(nomination.nomineeId);
+
+      if (!nominee || !memberMatchesNomineeStaffScope(nominee, category.nomineeStaffScope)) {
+        continue;
+      }
+    }
+
+    const categoryIds = categoryIdsByMemberId.get(nominator.id) ?? new Set();
+    categoryIds.add(category.id);
+    categoryIdsByMemberId.set(nominator.id, categoryIds);
+  }
+
+  return categoryIdsByMemberId;
+}
+
 export function buildNominationDirectory({ category, currentMemberId, members, query = "" }) {
   const normalizedQuery = query.trim().toLowerCase();
   const nomineeStaffScope = category?.nomineeStaffScope ?? "all";
@@ -202,6 +270,47 @@ export function hasSubmittedCompleteNominationBallot(input) {
   const submittedCategoryIds = getSubmittedNominationCategoryIds(input);
 
   return activeCategoryIds.every((categoryId) => submittedCategoryIds.includes(categoryId));
+}
+
+/**
+ * @param {{
+ *   categories?: Array<{ id: string; active?: boolean; ballotScope?: string; kind?: string; nomineeStaffScope?: string }>;
+ *   members?: Array<{ id: string; awardsEligible?: boolean; email?: string; name?: string; photoUrl?: string | null; staffType?: string; status?: string }>;
+ *   nominations?: Array<{ categoryId: string; nomineeId?: string; nominatorId: string }>;
+ * }} input
+ */
+export function getNominationSubmissionStatus(input = {}) {
+  const activeCategoryIds = activeNominationCategories(input.categories).map(
+    (category) => category.id,
+  );
+  const validCategoryIdsByMemberId = buildValidNominationCategoryIdsByMember(input);
+  const eligibleMembers = eligibleParticipationMembers(input.members);
+
+  const memberStatus = eligibleMembers.map((member) => {
+    const submittedCategoryIds = validCategoryIdsByMemberId.get(member.id) ?? new Set();
+    const missingCategoryCount = activeCategoryIds.filter(
+      (categoryId) => !submittedCategoryIds.has(categoryId),
+    ).length;
+
+    return {
+      complete: activeCategoryIds.length > 0 && missingCategoryCount === 0,
+      member,
+      missingCategoryCount,
+    };
+  });
+
+  return {
+    pending: memberStatus
+      .filter((item) => !item.complete)
+      .map((item) =>
+        participationMember(item.member, {
+          missingCategoryCount: item.missingCategoryCount,
+        }),
+      ),
+    submitted: memberStatus
+      .filter((item) => item.complete)
+      .map((item) => participationMember(item.member)),
+  };
 }
 
 /**
@@ -548,6 +657,104 @@ export function buildVisibleBallotFinalists({
         category.nomineeStaffScope,
       );
     });
+}
+
+/**
+ * @param {{
+ *   ballotScope?: string;
+ *   categories?: Array<{ id: string; active?: boolean; ballotScope?: string; nomineeStaffScope?: string }>;
+ *   finalists?: Array<{ categoryId: string; id: string; nomineeId?: string; status?: string }>;
+ *   memberId?: string;
+ *   members?: Array<{ id: string; awardsEligible?: boolean; staffType?: string; status?: string }>;
+ * }} input
+ */
+function getVisibleVotingCategoryIdsForMember({
+  ballotScope = "main",
+  categories = [],
+  finalists = [],
+  memberId,
+  members = [],
+}) {
+  const visibleFinalists = buildVisibleBallotFinalists({
+    categories,
+    currentMemberId: memberId,
+    finalists,
+    members,
+  });
+
+  return categories
+    .filter(
+      (category) =>
+        category.active !== false &&
+        (category.ballotScope ?? "main") === ballotScope &&
+        visibleFinalists.some(
+          (finalist) =>
+            finalist.categoryId === category.id && finalist.status === "approved",
+        ),
+    )
+    .map((category) => category.id);
+}
+
+/**
+ * @param {{
+ *   ballotScope?: string;
+ *   categories?: Array<{ id: string; active?: boolean; ballotScope?: string; nomineeStaffScope?: string }>;
+ *   finalists?: Array<{ categoryId: string; id: string; nomineeId?: string; status?: string }>;
+ *   members?: Array<{ id: string; awardsEligible?: boolean; email?: string; name?: string; photoUrl?: string | null; staffType?: string; status?: string }>;
+ *   voteReceipts?: Array<{ ballotScope?: string; categoryIds?: string[]; memberId: string; submittedAt?: Date | string | null }>;
+ * }} input
+ */
+export function getVotingSubmissionStatus({
+  ballotScope = "main",
+  categories = [],
+  finalists = [],
+  members = [],
+  voteReceipts = [],
+} = {}) {
+  const eligibleMembers = eligibleParticipationMembers(members);
+  const voteReceiptByMemberId = new Map(
+    voteReceipts
+      .filter((receipt) => (receipt.ballotScope ?? "main") === ballotScope)
+      .map((receipt) => [receipt.memberId, receipt]),
+  );
+  const memberStatus = eligibleMembers.map((member) => {
+    const requiredCategoryIds = getVisibleVotingCategoryIdsForMember({
+      ballotScope,
+      categories,
+      finalists,
+      memberId: member.id,
+      members,
+    });
+    const receipt = voteReceiptByMemberId.get(member.id);
+    const completedCategoryIds = getCompletedCategoryIds(receipt);
+    const missingCategoryCount = requiredCategoryIds.filter(
+      (categoryId) => !completedCategoryIds.includes(categoryId),
+    ).length;
+
+    return {
+      complete: requiredCategoryIds.length === 0 || missingCategoryCount === 0,
+      member,
+      missingCategoryCount,
+      submittedAt: receipt?.submittedAt ?? null,
+    };
+  });
+
+  return {
+    pending: memberStatus
+      .filter((item) => !item.complete)
+      .map((item) =>
+        participationMember(item.member, {
+          missingCategoryCount: item.missingCategoryCount,
+        }),
+      ),
+    submitted: memberStatus
+      .filter((item) => item.complete)
+      .map((item) =>
+        participationMember(item.member, {
+          submittedAt: item.submittedAt,
+        }),
+      ),
+  };
 }
 
 /**

@@ -18,9 +18,11 @@ import {
   getIncompleteBallotCategoryTitles,
   getInvalidNominationIdsForCategory,
   getNominationSupportThreshold,
+  getNominationSubmissionStatus,
   getOpenNominationCategories,
   getResetCategoryIds,
   getSubmittedNominationCategoryIds,
+  getVotingSubmissionStatus,
   getUnresolvedTieCategoryIds,
   groupNominationsByNominator,
   recordAnonymousVotes,
@@ -417,6 +419,45 @@ describe("nomination ballot", () => {
         ],
       }),
       ["nom-nss", "nom-self"],
+    );
+  });
+
+  it("lists eligible members still missing nomination categories", () => {
+    const status = getNominationSubmissionStatus({
+      categories,
+      members: [
+        ...members,
+        {
+          id: "mem-5",
+          name: "Excluded Member",
+          email: "excluded@cpa.test",
+          awardsEligible: false,
+          status: "active",
+        },
+      ],
+      nominations: [
+        { id: "nom-1", categoryId: "cat-leadership", nomineeId: "mem-2", nominatorId: "mem-1" },
+        { id: "nom-2", categoryId: "cat-service", nomineeId: "mem-4", nominatorId: "mem-1" },
+        { id: "nom-3", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-2" },
+        { id: "nom-4", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-3" },
+        { id: "nom-5", categoryId: "cat-leadership", nomineeId: "mem-4", nominatorId: "mem-5" },
+        { id: "nom-6", categoryId: "cat-service", nomineeId: "mem-4", nominatorId: "mem-4" },
+      ],
+    });
+
+    assert.deepEqual(
+      status.submitted.map((member) => member.memberId),
+      ["mem-1"],
+    );
+    assert.deepEqual(
+      status.pending.map((member) => ({
+        memberId: member.memberId,
+        missingCategoryCount: member.missingCategoryCount,
+      })),
+      [
+        { memberId: "mem-2", missingCategoryCount: 1 },
+        { memberId: "mem-4", missingCategoryCount: 2 },
+      ],
     );
   });
 });
@@ -871,6 +912,42 @@ describe("anonymous voting", () => {
         members,
       }).map((finalist) => finalist.id),
       ["fin-staff", "fin-nss"],
+    );
+  });
+
+  it("lists eligible voters still missing required visible ballot categories", () => {
+    const status = getVotingSubmissionStatus({
+      ballotScope: "main",
+      categories: [
+        { id: "cat-leadership", active: true, ballotScope: "main" },
+        { id: "cat-service", active: true, ballotScope: "main" },
+      ],
+      finalists: [
+        { id: "fin-1", categoryId: "cat-leadership", nomineeId: "mem-2", status: "approved" },
+        { id: "fin-2", categoryId: "cat-service", nomineeId: "mem-1", status: "approved" },
+        { id: "fin-3", categoryId: "cat-service", nomineeId: "mem-4", status: "approved" },
+      ],
+      members,
+      voteReceipts: [
+        { memberId: "mem-1", ballotScope: "main", categoryIds: ["cat-leadership"] },
+        { memberId: "mem-2", ballotScope: "main", categoryIds: ["cat-leadership", "cat-service"] },
+        { memberId: "mem-4", ballotScope: "main", categoryIds: ["cat-service"] },
+      ],
+    });
+
+    assert.deepEqual(
+      status.submitted.map((member) => member.memberId),
+      ["mem-2"],
+    );
+    assert.deepEqual(
+      status.pending.map((member) => ({
+        memberId: member.memberId,
+        missingCategoryCount: member.missingCategoryCount,
+      })),
+      [
+        { memberId: "mem-1", missingCategoryCount: 1 },
+        { memberId: "mem-4", missingCategoryCount: 1 },
+      ],
     );
   });
 
