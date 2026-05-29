@@ -1218,27 +1218,42 @@ textarea:focus {
 }
 
 .nomination-review-card {
-  align-items: flex-start;
+  display: grid;
+  align-items: stretch;
+  gap: 12px;
 }
 
-.nomination-review-card > span {
+.nomination-review-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nomination-review-person {
   flex: 1;
   min-width: 0;
 }
 
 .nomination-choice-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 10px;
 }
 
 .nomination-choice {
   display: grid;
   gap: 3px;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
   padding: 9px 10px;
+}
+
+.nomination-choice strong {
+  line-height: 1.35;
 }
 
 .inline-message {
@@ -1423,6 +1438,7 @@ textarea:focus {
   .admin-columns,
   .category-list,
   .finalist-grid,
+  .nomination-choice-list,
   .participation-list,
   .progress-grid,
   .schedule-form-grid,

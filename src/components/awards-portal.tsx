@@ -1863,20 +1863,22 @@ function AdminQueues({ model }: { model: AwardPortalModel }) {
             ) : null}
             {nominationGroups.map((group) => (
               <article className="mini-row review-row nomination-review-card" key={group.nominatorId}>
-                <PersonAvatar member={group.nominator} name={group.nominatorName} />
-                <span>
-                  <strong>{group.nominatorName}</strong>
-                  <small>{group.nominations.length} categories submitted</small>
-                  <div className="nomination-choice-list">
-                    {group.nominations.map((nomination) => (
-                      <div className="nomination-choice" key={nomination.id}>
-                        <strong>{nomination.categoryTitle}</strong>
-                        <small>Selection hidden</small>
-                      </div>
-                    ))}
-                  </div>
-                </span>
-                <StagePill stage="Submitted" />
+                <div className="nomination-review-head">
+                  <PersonAvatar member={group.nominator} name={group.nominatorName} />
+                  <span className="nomination-review-person">
+                    <strong>{group.nominatorName}</strong>
+                    <small>{group.nominations.length} categories submitted</small>
+                  </span>
+                  <StagePill stage="Submitted" />
+                </div>
+                <div className="nomination-choice-list">
+                  {group.nominations.map((nomination) => (
+                    <div className="nomination-choice" key={nomination.id}>
+                      <strong>{nomination.categoryTitle}</strong>
+                      <small>Selection hidden</small>
+                    </div>
+                  ))}
+                </div>
               </article>
             ))}
           </div>
